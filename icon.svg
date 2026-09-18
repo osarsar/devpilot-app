@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#7c3aed"/>
+      <stop offset="100%" style="stop-color:#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#38bdf8"/>
+      <stop offset="100%" style="stop-color:#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+  <!-- Code bracket left -->
+  <path d="M155 170 L105 256 L155 342" stroke="white" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Code bracket right -->
+  <path d="M357 170 L407 256 L357 342" stroke="white" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Pilot arrow / compass -->
+  <polygon points="256,185 290,310 256,280 222,310" fill="url(#accent)"/>
+  <!-- Dot -->
+  <circle cx="256" cy="175" r="14" fill="url(#accent)"/>
+  <!-- DP text bottom -->
+  <text x="256" y="435" text-anchor="middle" font-family="sans-serif" font-weight="900" font-size="80" fill="rgba(255,255,255,0.85)" letter-spacing="6">DP</text>
+</svg>

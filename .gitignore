@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite
+*.sqlite3
+data/
+static/
+.env
+*.pem
+*.key
+node_modules/
+*.bak
+templates/dashboard_backup_original.html
+templates/dashboard_new.html
