@@ -2948,26 +2948,58 @@ function loadWsPrompt() {
     const el = document.getElementById('ws-prompt');
     if (!wsSpecs || !wsSpecs.prompt) { el.innerHTML = '<div class="card" style="padding:16px"><div style="color:var(--text-4);font-size:12px;text-align:center;padding:20px">Pas de prompt</div></div>'; return; }
     el.innerHTML = '<div class="card" style="padding:14px"><div class="flex-between mb-8"><div class="card-label" style="margin-bottom:0">Prompt Claude</div><div class="flex gap-6">'
-        + '<button class="btn btn-xs" onclick="navigator.clipboard.writeText(wsSpecs.prompt);toast(\'Copie\')">Copier</button>'
+        + '<button class="btn btn-xs" id="ws-prompt-save" onclick="wsSavePrompt()" style="display:none;background:var(--emerald);border-color:var(--emerald);color:#fff">Sauvegarder</button>'
+        + '<button class="btn btn-xs" onclick="wsCopyPrompt()">Copier</button>'
         + '<button class="btn btn-xs btn-primary" onclick="sendPromptToTerminal()">Envoyer au terminal</button>'
         + '</div></div>'
-        + '<pre class="mono" style="font-size:10px;color:var(--text-2);white-space:pre-wrap;background:var(--bg-0);padding:12px;border-radius:var(--radius-xs);border:1px solid var(--border-0);max-height:calc(100vh - 250px);overflow-y:auto;line-height:1.5">'
+        + '<textarea id="ws-prompt-editor" class="mono" oninput="document.getElementById(\'ws-prompt-save\').style.display=\'\'" style="width:100%;font-size:10px;color:var(--text-2);background:var(--bg-0);padding:12px;border-radius:var(--radius-xs);border:1px solid var(--border-0);min-height:300px;max-height:calc(100vh - 250px);resize:vertical;line-height:1.5;font-family:inherit">'
         + wsSpecs.prompt.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        + '</pre></div>';
+        + '</textarea></div>';
 }
 
-function copyWsPrompt() { if (wsSpecs?.prompt) { navigator.clipboard.writeText(wsSpecs.prompt); toast('Prompt copie'); } }
+function wsCopyPrompt() {
+    const editor = document.getElementById('ws-prompt-editor');
+    const text = editor ? editor.value : (wsSpecs?.prompt || '');
+    navigator.clipboard.writeText(text);
+    toast('Prompt copie');
+}
+
+async function wsSavePrompt() {
+    const editor = document.getElementById('ws-prompt-editor');
+    if (!editor || !wsProjectId) return;
+    const newPrompt = editor.value;
+    wsSpecs.prompt = newPrompt;
+    await apiPost('projects/' + wsProjectId + '/specs', {
+        wizard_data: wsSpecs.wizard_data || {},
+        checklist: wsSpecs.checklist || [],
+        prompt: newPrompt,
+    });
+    // Also update prompt.md
+    const p = wsProjectData?.project;
+    if (p?.path) {
+        await apiPost('terminal/exec', {cmd: 'cat > "' + p.path + '/.devpilot/prompt.md" << \'DEVPILOT_EOF\'\n' + newPrompt + '\nDEVPILOT_EOF', cwd: p.path}).catch(function(){});
+    }
+    document.getElementById('ws-prompt-save').style.display = 'none';
+    toast('Prompt sauvegarde');
+}
 
 async function sendPromptToTerminal() {
-    if (!wsSpecs?.prompt || !wsProjectId) return;
+    if (!wsProjectId) return;
+    const editor = document.getElementById('ws-prompt-editor');
+    const prompt = editor ? editor.value : (wsSpecs?.prompt || '');
+    if (!prompt) { toast('Pas de prompt', 'error'); return; }
     const project = wsProjectData?.project;
     if (!project?.path) { toast('Pas de chemin projet', 'error'); return; }
+
+    // Save current editor content first
+    wsSpecs.prompt = prompt;
+    await wsSavePrompt();
 
     // Save prompt to a file in the project, then launch claude with it
     const promptPath = project.path + '/.devpilot/prompt.md';
     try {
         await apiPost('terminal/exec', { cmd: 'mkdir -p "' + project.path + '/.devpilot"', cwd: project.path });
-        await apiPost('terminal/exec', { cmd: 'cat > "' + promptPath + '" << \'DEVPILOT_PROMPT_EOF\'\n' + wsSpecs.prompt + '\nDEVPILOT_PROMPT_EOF', cwd: project.path });
+        await apiPost('terminal/exec', { cmd: 'cat > "' + promptPath + '" << \'DEVPILOT_PROMPT_EOF\'\n' + prompt + '\nDEVPILOT_PROMPT_EOF', cwd: project.path });
 
         // Send command to the live terminal
         if (xterm && xtermWs && xtermWs.readyState === WebSocket.OPEN) {
@@ -2997,6 +3029,7 @@ const CONN_ICONS = {
     monitoring: {emoji:'📊', bg:'rgba(244,63,94,.12)'},
     docker:     {emoji:'🐳', bg:'rgba(56,189,248,.12)'},
     ci_cd:      {emoji:'⚙️', bg:'rgba(245,158,11,.12)'},
+    email:      {emoji:'📧', bg:'rgba(96,165,250,.12)'},
 };
 const CONN_STATUS = {
     connected:     {label:'Connecte',      cls:'badge-emerald'},
@@ -3065,6 +3098,12 @@ async function loadWsConnections() {
                     actionBtns += '<button class="btn btn-xs" onclick="wsRegenToken(\'' + (act.url || '') + '\')" style="flex-shrink:0">' + act.label + '</button>';
                 } else if (act.action_type === 'enter_site_url') {
                     actionBtns += '<button class="btn btn-xs btn-primary" onclick="wsEnterSiteUrl()" style="flex-shrink:0">' + act.label + '</button>';
+                } else if (act.action_type === 'setup_email') {
+                    actionBtns += '<button class="btn btn-xs btn-primary" onclick="wsSetupEmail()" style="flex-shrink:0">' + act.label + '</button>';
+                } else if (act.action_type === 'setup_domain' || act.action_type === 'edit_domain') {
+                    actionBtns += '<button class="btn btn-xs btn-primary" onclick="wsSetupDomain()" style="flex-shrink:0">' + act.label + '</button>';
+                } else if (act.action_type === 'show_dns') {
+                    actionBtns += '<button class="btn btn-xs" onclick="wsShowDns()" style="flex-shrink:0">' + act.label + '</button>';
                 } else if (act.url) {
                     actionBtns += '<button class="btn btn-xs btn-primary" onclick="wsConnAction(\'' + c.type + '\',\'' + act.url + '\')" style="flex-shrink:0">' + act.label + '</button>';
                 } else {
@@ -3331,6 +3370,286 @@ async function wsSaveSiteUrl() {
     if (projectUrl) config.project_url = projectUrl;
     await apiPost('projects/' + wsProjectId + '/connections', {type: 'deploy', config: config});
     toast('URL du site enregistree');
+    loadWsConnections();
+}
+
+// Setup email
+function wsSetupEmail() {
+    const pasteEl = document.getElementById('conn-paste-email');
+    if (!pasteEl) return;
+
+    const providers = [
+        {key:'google', label:'Google Workspace', price:'6€/mois', buy:'https://workspace.google.com/pricing'},
+        {key:'zoho', label:'Zoho Mail', price:'Gratuit (1 user)', buy:'https://www.zoho.com/mail/zohomail-pricing.html'},
+        {key:'ovh', label:'OVH Email', price:'~1€/mois', buy:'https://www.ovh.com/fr/emails/'},
+        {key:'infomaniak', label:'Infomaniak', price:'~1.5€/mois', buy:'https://www.infomaniak.com/fr/hebergement/service-mail'},
+        {key:'protonmail', label:'Proton Mail', price:'4€/mois', buy:'https://proton.me/business'},
+    ];
+
+    // Get domain for suggestion
+    let domainSuffix = '';
+    api('projects/' + wsProjectId + '/connections').then(function(data) {
+        const dom = (data.connections || []).find(function(c) { return c.type === 'domain' && c.status !== 'non_connecte'; });
+        if (dom) domainSuffix = dom.label;
+        const emailConn = (data.connections || []).find(function(c) { return c.type === 'email'; });
+
+        let html = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:14px">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--violet);margin-bottom:12px">Configurer email professionnel</div>';
+
+        // Step 1: Provider
+        html += '<div style="margin-bottom:10px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:6px">1. Chez quel provider ?</div>'
+            + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">';
+        for (const p of providers) {
+            html += '<div onclick="document.querySelectorAll(\'.email-prov\').forEach(e=>e.style.border=\'1px solid var(--border-1)\');this.style.border=\'2px solid var(--violet)\';document.getElementById(\'email-provider\').value=\'' + p.key + '\'" '
+                + 'class="email-prov" style="padding:8px;border-radius:6px;border:1px solid var(--border-1);cursor:pointer;text-align:center;transition:all .15s">'
+                + '<div style="font-size:11px;font-weight:600;color:var(--text-0)">' + p.label + '</div>'
+                + '<div style="font-size:9px;color:var(--text-4)">' + p.price + '</div></div>';
+        }
+        html += '</div><input type="hidden" id="email-provider" value="' + (emailConn?.details?.provider || '') + '"></div>';
+
+        // Step 2: Email addresses
+        html += '<div style="margin-bottom:10px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">2. Adresses email creees</div>'
+            + '<input class="form-input" id="email-addresses" value="' + (emailConn?.details?.adresses || '') + '" placeholder="contact@' + (domainSuffix || 'example.com') + ', info@' + (domainSuffix || 'example.com') + '" style="font-size:12px;padding:6px 8px">'
+            + '<div style="font-size:9px;color:var(--text-4);margin-top:2px">Separe par des virgules</div></div>';
+
+        // Step 3: Dashboard URL
+        html += '<div style="margin-bottom:10px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">3. Liens de gestion</div>'
+            + '<input class="form-input" id="email-dashboard" placeholder="URL dashboard admin" style="font-size:11px;padding:5px 8px;margin-bottom:4px">'
+            + '<input class="form-input" id="email-webmail" placeholder="URL webmail (pour lire les emails)" style="font-size:11px;padding:5px 8px">'
+            + '</div>';
+
+        // Step 4: MX records
+        html += '<div style="margin-bottom:10px;padding:8px;background:var(--bg-1);border-radius:6px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">4. Records MX dans le DNS</div>'
+            + '<div style="font-size:10px;color:var(--text-3);margin-bottom:4px">Pour recevoir les emails, ajoute les records MX dans la page DNS de ton domaine</div>'
+            + '<div style="display:flex;align-items:center;gap:6px">'
+            + '<input type="checkbox" id="email-mx-ok" style="accent-color:var(--emerald)">'
+            + '<label for="email-mx-ok" style="font-size:11px;color:var(--text-2);cursor:pointer">MX configures dans le DNS</label>'
+            + '</div></div>';
+
+        // Buttons to open providers
+        html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">';
+        for (const p of providers) {
+            html += '<button class="btn btn-xs" onclick="window.open(\'' + p.buy + '\',\'_blank\')" style="font-size:9px">' + p.label + '</button>';
+        }
+        html += '</div>';
+
+        html += '<div class="flex gap-6">'
+            + '<button class="btn btn-xs btn-primary" onclick="wsSaveEmail()">Enregistrer</button>'
+            + '<button class="btn btn-xs" onclick="document.getElementById(\'conn-paste-email\').style.display=\'none\'">Annuler</button>'
+            + '</div></div>';
+
+        pasteEl.innerHTML = html;
+        pasteEl.style.display = 'block';
+    });
+}
+
+async function wsSaveEmail() {
+    const provider = document.getElementById('email-provider')?.value || '';
+    const addresses = document.getElementById('email-addresses')?.value.trim() || '';
+    const dashboard = document.getElementById('email-dashboard')?.value.trim() || '';
+    const webmail = document.getElementById('email-webmail')?.value.trim() || '';
+    const mxOk = document.getElementById('email-mx-ok')?.checked || false;
+
+    if (!provider) { toast('Choisis un provider', 'error'); return; }
+
+    await apiPost('projects/' + wsProjectId + '/connections', {
+        type: 'email',
+        config: {provider: provider, addresses: addresses, dashboard_url: dashboard, webmail_url: webmail, mx_configured: mxOk}
+    });
+    toast('Email configure');
+    loadWsConnections();
+}
+
+// Setup domain name
+function wsSetupDomain() {
+    const pasteEl = document.getElementById('conn-paste-domain');
+    if (!pasteEl) return;
+
+    const registrars = [
+        {key:'cloudflare', label:'Cloudflare', dns_hint:'dash.cloudflare.com/ACCOUNT_ID/DOMAINE/dns'},
+        {key:'namecheap', label:'Namecheap', dns_hint:'ap.www.namecheap.com/domains/domaincontrolpanel/DOMAINE/advancedns'},
+        {key:'ovh', label:'OVH / OVHcloud', dns_hint:'www.ovh.com/manager/#/web/domain/DOMAINE/zone'},
+        {key:'godaddy', label:'GoDaddy', dns_hint:'dcc.godaddy.com/manage/DOMAINE/dns'},
+        {key:'google', label:'Google Domains', dns_hint:'domains.google.com/registrar/DOMAINE/dns'},
+        {key:'ionos', label:'IONOS', dns_hint:'my.ionos.com/domains/DOMAINE'},
+        {key:'other', label:'Autre'},
+    ];
+
+    let html = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:14px">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--violet);margin-bottom:12px">Configurer le nom de domaine</div>'
+
+        // Step 1: Domain name
+        + '<div style="margin-bottom:12px">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">1. Nom de domaine</div>'
+        + '<input class="form-input" id="dom-name" placeholder="hassouniprotrans.com" style="font-size:12px;padding:6px 8px">'
+        + '</div>'
+
+        // Step 2: Registrar
+        + '<div style="margin-bottom:12px">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">2. Achete chez quel registrar ?</div>'
+        + '<select class="form-input" id="dom-registrar" onchange="wsUpdateDnsDashHint()" style="font-size:12px;padding:6px 8px">';
+    for (const r of registrars) {
+        html += '<option value="' + r.key + '">' + r.label + '</option>';
+    }
+    html += '</select></div>'
+
+        // Step 3: Direct DNS link
+        + '<div style="margin-bottom:12px">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">3. Lien direct vers la page DNS du domaine</div>'
+        + '<div style="font-size:10px;color:var(--text-3);margin-bottom:4px" id="dom-dns-hint">Ouvre ton registrar → va sur la page DNS de ton domaine → copie l\'URL de cette page</div>'
+        + '<input class="form-input" id="dom-dashboard" placeholder="https://..." style="font-size:12px;padding:6px 8px">'
+        + '<div style="font-size:9px;color:var(--text-4);margin-top:2px">Ce lien te ramenera directement a la page DNS pour modifier les records</div>'
+        + '</div>'
+
+        // Step 4: SSL
+        + '<div style="margin-bottom:12px">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">4. SSL</div>'
+        + '<select class="form-input" id="dom-ssl" style="font-size:12px;padding:6px 8px">'
+        + '<option value="auto">Automatique (via hosting)</option>'
+        + '<option value="letsencrypt">Let\'s Encrypt</option>'
+        + '<option value="cloudflare">Cloudflare (proxy)</option>'
+        + '</select></div>'
+
+        // Step 5: DNS status
+        + '<div style="margin-bottom:12px;padding:10px;border-radius:6px;background:var(--bg-1);border:1px solid var(--border-0)">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:6px">5. DNS configure ?</div>'
+        + '<div style="display:flex;gap:8px">'
+        + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-2);cursor:pointer;padding:4px 10px;border-radius:6px;border:1px solid var(--border-1)">'
+        + '<input type="radio" name="dom-dns-status" value="no" checked style="accent-color:var(--violet)"> Pas encore</label>'
+        + '<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-2);cursor:pointer;padding:4px 10px;border-radius:6px;border:1px solid var(--border-1)">'
+        + '<input type="radio" name="dom-dns-status" value="yes" style="accent-color:var(--emerald)"> Oui, DNS pointe vers le hosting</label>'
+        + '</div></div>'
+
+        + '<div class="flex gap-6"><button class="btn btn-xs btn-primary" onclick="wsSaveDomain()">Enregistrer</button>'
+        + '<button class="btn btn-xs" onclick="document.getElementById(\'conn-paste-domain\').style.display=\'none\'">Annuler</button></div></div>';
+
+    pasteEl.innerHTML = html;
+    pasteEl.style.display = 'block';
+    window._domRegistrars = registrars;
+
+    // Pre-fill if domain exists
+    api('projects/' + wsProjectId + '/connections').then(function(data) {
+        const dom = (data.connections || []).find(function(c) { return c.type === 'domain'; });
+        if (dom && dom.details) {
+            const nameEl = document.getElementById('dom-name');
+            if (nameEl && dom.label && dom.label !== 'Nom de domaine') nameEl.value = dom.label;
+            const regEl = document.getElementById('dom-registrar');
+            if (regEl && dom.details.registrar && dom.details.registrar !== 'non renseigne') {
+                for (const opt of regEl.options) { if (opt.value === dom.details.registrar) opt.selected = true; }
+            }
+            const dashEl = document.getElementById('dom-dashboard');
+            if (dashEl && dom.details.dashboard_url) dashEl.value = dom.details.dashboard_url;
+        }
+        wsUpdateDnsDashHint();
+    });
+    setTimeout(function() { document.getElementById('dom-name')?.focus(); }, 100);
+}
+
+function wsUpdateDnsDashHint() {
+    const regSel = document.getElementById('dom-registrar');
+    const hintEl = document.getElementById('dom-dns-hint');
+    const dashEl = document.getElementById('dom-dashboard');
+    if (!regSel || !hintEl) return;
+    const reg = (window._domRegistrars || []).find(function(r) { return r.key === regSel.value; });
+    if (reg && reg.dns_hint) {
+        const domain = document.getElementById('dom-name')?.value.trim() || 'DOMAINE';
+        const example = reg.dns_hint.replace(/DOMAINE/g, domain);
+        hintEl.innerHTML = 'Ouvre <b>' + reg.label + '</b> → va sur la page DNS de ton domaine → copie l\'URL<br>'
+            + '<span style="color:var(--text-4)">Exemple: https://' + example + '</span>';
+        if (!dashEl.value) dashEl.placeholder = 'https://' + example;
+    } else {
+        hintEl.textContent = 'Ouvre ton registrar → va sur la page DNS de ton domaine → copie l\'URL';
+    }
+}
+
+async function wsSaveDomain() {
+    const domain = document.getElementById('dom-name')?.value.trim();
+    if (!domain) { toast('Entre le nom de domaine', 'error'); return; }
+    const registrar = document.getElementById('dom-registrar')?.value || '';
+    const ssl = document.getElementById('dom-ssl')?.value || '';
+    const dashboard = document.getElementById('dom-dashboard')?.value.trim() || '';
+    const dnsStatus = document.querySelector('input[name="dom-dns-status"]:checked')?.value || 'no';
+
+    await apiPost('projects/' + wsProjectId + '/connections', {
+        type: 'domain',
+        config: {domain: domain, registrar: registrar, ssl: ssl, dashboard_url: dashboard, dns_configured: dnsStatus === 'yes'}
+    });
+    toast('Domaine "' + domain + '" enregistre');
+    loadWsConnections();
+}
+
+function wsShowDns() {
+    const pasteEl = document.getElementById('conn-paste-domain');
+    if (!pasteEl) return;
+
+    // Get hosting platform from connections
+    const dnsRecords = {
+        vercel: {type:'CNAME', name:'@', value:'cname.vercel-dns.com', alt:'A record: 76.76.21.21', www:'CNAME → cname.vercel-dns.com'},
+        netlify: {type:'CNAME', name:'@', value:'<ton-site>.netlify.app', alt:'', www:'CNAME → <ton-site>.netlify.app'},
+        cloudflare: {type:'CNAME', name:'@', value:'<ton-site>.pages.dev', alt:'', www:'CNAME → <ton-site>.pages.dev'},
+        railway: {type:'CNAME', name:'@', value:'Voir ton dashboard Railway > Settings > Domains', alt:'', www:''},
+        render: {type:'CNAME', name:'@', value:'Voir ton dashboard Render > Settings > Custom Domains', alt:'', www:''},
+    };
+
+    // Detect platform
+    let platform = '';
+    if (wsProjectData?.project) {
+        api('projects/' + wsProjectId + '/connections').then(function(data) {
+            const deploy = (data.connections || []).find(function(c) { return c.type === 'deploy'; });
+            const dom = (data.connections || []).find(function(c) { return c.type === 'domain'; });
+            platform = deploy?.details?.plateforme || '';
+            const rec = dnsRecords[platform] || {};
+            const registrar = dom?.details?.registrar || '';
+            const registrarUrls = {cloudflare:'https://dash.cloudflare.com/',namecheap:'https://ap.www.namecheap.com/domains/list',ovh:'https://www.ovh.com/manager/',godaddy:'https://dcc.godaddy.com/domains'};
+            const dashUrl = registrarUrls[registrar] || '';
+
+            let html = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:14px">'
+                + '<div style="font-size:13px;font-weight:700;color:var(--violet);margin-bottom:10px">Configuration DNS requise</div>'
+                + '<div style="font-size:11px;color:var(--text-2);margin-bottom:12px;line-height:1.5">'
+                + 'Va dans le dashboard de ton registrar <b>(' + (registrar || '?') + ')</b> et ajoute ces records DNS :'
+                + '</div>';
+
+            if (rec.type) {
+                html += '<div style="background:var(--bg-1);border:1px solid var(--border-1);border-radius:6px;padding:10px;margin-bottom:8px;font-family:monospace;font-size:11px">'
+                    + '<div style="display:grid;grid-template-columns:60px 60px 1fr;gap:4px;margin-bottom:4px">'
+                    + '<span style="color:var(--text-4)">Type</span><span style="color:var(--text-4)">Name</span><span style="color:var(--text-4)">Value</span>'
+                    + '<span style="color:var(--emerald);font-weight:700">' + rec.type + '</span><span style="color:var(--text-1)">' + rec.name + '</span>'
+                    + '<span style="color:var(--violet);cursor:pointer" onclick="navigator.clipboard.writeText(\'' + rec.value + '\');toast(\'Copie\')" title="Cliquer pour copier">' + rec.value + ' 📋</span>'
+                    + '</div>';
+                if (rec.www) {
+                    html += '<div style="display:grid;grid-template-columns:60px 60px 1fr;gap:4px">'
+                        + '<span style="color:var(--emerald);font-weight:700">CNAME</span><span style="color:var(--text-1)">www</span>'
+                        + '<span style="color:var(--violet)">' + rec.www + '</span></div>';
+                }
+                html += '</div>';
+                if (rec.alt) {
+                    html += '<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">Alternative: ' + rec.alt + '</div>';
+                }
+            } else {
+                html += '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Consulte le dashboard de <b>' + (platform || 'ton hosting') + '</b> pour les records DNS a ajouter.</div>';
+            }
+
+            html += '<div style="display:flex;gap:6px;align-items:center;margin-top:10px">';
+            if (dashUrl) {
+                html += '<button class="btn btn-xs btn-primary" onclick="window.open(\'' + dashUrl + '\',\'_blank\')">Ouvrir ' + registrar + '</button>';
+            }
+            html += '<button class="btn btn-xs" onclick="wsDnsConfirm()">J\'ai configure le DNS</button>'
+                + '<button class="btn btn-xs" onclick="document.getElementById(\'conn-paste-domain\').style.display=\'none\'">Fermer</button>'
+                + '</div></div>';
+
+            pasteEl.innerHTML = html;
+            pasteEl.style.display = 'block';
+        });
+    }
+}
+
+async function wsDnsConfirm() {
+    await apiPost('projects/' + wsProjectId + '/connections', {type:'domain', config:{dns_configured:true}});
+    toast('DNS marque comme configure');
     loadWsConnections();
 }
 

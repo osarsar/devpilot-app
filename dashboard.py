@@ -1621,6 +1621,24 @@ def _write_claude_md(project_path, project, specs):
             conn_lines.append("")
             has_connections = True
 
+        elif comp_key == "email" and (cfg.get("provider") or cfg.get("addresses")):
+            conn_lines.append("### Email")
+            if cfg.get("provider"): conn_lines.append(f"- Provider: {cfg['provider']}")
+            if cfg.get("addresses"): conn_lines.append(f"- Adresses: {cfg['addresses']}")
+            if cfg.get("webmail_url"): conn_lines.append(f"- Webmail: {cfg['webmail_url']}")
+            if cfg.get("dashboard_url"): conn_lines.append(f"- Dashboard: {cfg['dashboard_url']}")
+            conn_lines.append("")
+            has_connections = True
+
+        elif comp_key == "domain" and cfg.get("domain"):
+            conn_lines.append("### Domaine")
+            conn_lines.append(f"- Domaine: {cfg['domain']}")
+            if cfg.get("registrar"): conn_lines.append(f"- Registrar: {cfg['registrar']}")
+            if cfg.get("ssl"): conn_lines.append(f"- SSL: {cfg['ssl']}")
+            if cfg.get("dashboard_url"): conn_lines.append(f"- Dashboard: {cfg['dashboard_url']}")
+            conn_lines.append("")
+            has_connections = True
+
         elif comp_key == "backup" and (cfg.get("bucket") or cfg.get("destination")):
             conn_lines.append("### Backup")
             if cfg.get("destination"): conn_lines.append(f"- Destination: {cfg['destination']}")

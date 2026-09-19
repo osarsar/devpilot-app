@@ -526,6 +526,7 @@ CONNECTION_TYPES = {
     "monitoring": {"label": "Monitoring",     "icon": "activity",  "color": "#f43f5e"},
     "docker":     {"label": "Docker",         "icon": "container", "color": "#38bdf8"},
     "ci_cd":      {"label": "CI/CD",          "icon": "refresh",   "color": "#f59e0b"},
+    "email":      {"label": "Email",          "icon": "mail",      "color": "#60a5fa"},
 }
 
 DB_LABELS = {"postgres": "PostgreSQL", "mysql": "MySQL", "mongodb": "MongoDB",
@@ -572,6 +573,12 @@ CONNECTION_FIELDS = {
         {"key": "destination", "label": "Destination", "placeholder": "r2, s3, local"},
         {"key": "bucket", "label": "Bucket", "placeholder": "mon-projet-backups"},
         {"key": "frequency", "label": "Frequence", "placeholder": "daily, weekly, manual"},
+    ],
+    "email": [
+        {"key": "provider", "label": "Provider", "placeholder": "google, zoho, ovh, infomaniak, protonmail"},
+        {"key": "addresses", "label": "Adresses email", "placeholder": "contact@, info@, admin@"},
+        {"key": "dashboard_url", "label": "URL dashboard", "placeholder": "https://admin.google.com/..."},
+        {"key": "webmail_url", "label": "URL webmail", "placeholder": "https://mail.google.com/..."},
     ],
 }
 
@@ -758,17 +765,165 @@ def api_get_connections(pid):
         })
 
     # ──── DOMAINE ────
-    domain = deploy_cfg.get("domain", "") or wd.get("domain_name", "")
-    dns = deploy_cfg.get("dns", "") or wd.get("dns_provider", "")
-    ssl = deploy_cfg.get("ssl", "") or wd.get("ssl", "")
-    dns_urls = {"cloudflare": "https://dash.cloudflare.com/", "namecheap": "https://www.namecheap.com/",
-                "ovh": "https://www.ovh.com/manager/"}
+    domain_comp = comps.get("domain")
+    domain_cfg = _parse_cfg(domain_comp)
+    domain = domain_cfg.get("domain", "") or deploy_cfg.get("domain", "") or wd.get("domain_name", "")
+    registrar = domain_cfg.get("registrar", "") or deploy_cfg.get("dns", "") or wd.get("dns_provider", "")
+    ssl = domain_cfg.get("ssl", "") or deploy_cfg.get("ssl", "") or wd.get("ssl", "")
+    registrar_dashboard = domain_cfg.get("dashboard_url", "")
+
+    registrar_urls = {
+        "cloudflare": "https://dash.cloudflare.com/",
+        "namecheap": "https://ap.www.namecheap.com/domains/list",
+        "ovh": "https://www.ovh.com/manager/",
+        "godaddy": "https://dcc.godaddy.com/domains",
+        "google": "https://domains.google.com/registrar",
+        "ionos": "https://my.ionos.com/domains",
+    }
+    registrar_buy_urls = {
+        "cloudflare": "https://dash.cloudflare.com/?to=/:account/domains/register",
+        "namecheap": "https://www.namecheap.com/domains/registration/results/",
+        "ovh": "https://www.ovh.com/fr/order/webcloud/",
+        "godaddy": "https://www.godaddy.com/domains",
+    }
+
+    # Linked hosting info
+    hosting_label = ""
+    if platform and account_name:
+        hosting_label = f"{platform} ({account_name})"
+    elif platform:
+        hosting_label = platform
+
+    # DNS records needed based on hosting platform
+    dns_records = {
+        "vercel": {"type": "CNAME", "value": "cname.vercel-dns.com", "alt": "A 76.76.21.21"},
+        "netlify": {"type": "CNAME", "value": "<site>.netlify.app"},
+        "cloudflare": {"type": "CNAME", "value": "<site>.pages.dev"},
+        "railway": {"type": "CNAME", "value": "voir dashboard Railway"},
+        "render": {"type": "CNAME", "value": "voir dashboard Render"},
+    }
+    dns_config = domain_cfg.get("dns_configured", False)
+    dns_record = dns_records.get(platform, {})
 
     if domain:
+        dash_url = registrar_dashboard or registrar_urls.get(registrar, "")
+
+        # Determine DNS status
+        dns_status = "configure" if dns_config else "a_configurer"
+        # Use the direct DNS page URL if saved, otherwise fall back to registrar homepage
+        dns_page_url = domain_cfg.get("dashboard_url", "") or dash_url
+
+        details = {
+            "registrar": registrar or "non renseigne",
+            "SSL": ssl or "non configure",
+            "lie_a": hosting_label or "non lie",
+        }
+        if dns_record and not dns_config:
+            details["DNS_requis"] = f"{dns_record.get('type', '')} → {dns_record.get('value', '')}"
+            if dns_record.get("alt"):
+                details["DNS_alt"] = dns_record["alt"]
+        if dns_config:
+            details["DNS"] = "configure"
+
+        actions = []
+        if dns_page_url:
+            actions.append({"label": "Gerer DNS", "url": dns_page_url, "action_type": "open_hosting"})
+        if dns_record and not dns_config:
+            actions.append({"label": "Voir config DNS", "action_type": "show_dns"})
+        actions.append({"label": "Modifier", "action_type": "edit_domain"})
+
         connections.append({
-            "type": "domain", "label": domain, "status": "connected",
+            "type": "domain", "label": domain,
+            "status": "connected" if dns_config else "a_configurer",
             "url": f"https://{domain}",
-            "details": {"DNS": dns, "SSL": ssl}, "action": None,
+            "details": details,
+            "actions": actions,
+        })
+    else:
+        connections.append({
+            "type": "domain", "label": "Nom de domaine", "status": "non_connecte",
+            "url": "", "details": {},
+            "actions": [
+                {"label": "Configurer un domaine", "action_type": "setup_domain"},
+            ],
+        })
+
+    # ──── EMAIL ────
+    email_comp = comps.get("email")
+    email_cfg = _parse_cfg(email_comp)
+    email_provider = email_cfg.get("provider", "") or wd.get("email_service", "")
+    email_addresses = email_cfg.get("addresses", "")
+    email_dashboard = email_cfg.get("dashboard_url", "")
+    email_webmail = email_cfg.get("webmail_url", "")
+
+    provider_urls = {
+        "google":     {"dashboard": "https://admin.google.com/", "webmail": "https://mail.google.com/", "buy": "https://workspace.google.com/pricing"},
+        "zoho":       {"dashboard": "https://mail.zoho.com/cpanel/", "webmail": "https://mail.zoho.com/", "buy": "https://www.zoho.com/mail/zohomail-pricing.html"},
+        "ovh":        {"dashboard": "https://www.ovh.com/manager/", "webmail": "https://www.ovh.com/fr/mail/", "buy": "https://www.ovh.com/fr/emails/"},
+        "infomaniak": {"dashboard": "https://manager.infomaniak.com/", "webmail": "https://mail.infomaniak.com/", "buy": "https://www.infomaniak.com/fr/hebergement/service-mail"},
+        "protonmail": {"dashboard": "https://account.proton.me/", "webmail": "https://mail.proton.me/", "buy": "https://proton.me/business"},
+        "resend":     {"dashboard": "https://resend.com/domains", "webmail": "", "buy": "https://resend.com/"},
+    }
+
+    # MX records per provider for DNS config
+    email_mx = {
+        "google":     [{"priority": "1", "value": "ASPMX.L.GOOGLE.COM"}, {"priority": "5", "value": "ALT1.ASPMX.L.GOOGLE.COM"}],
+        "zoho":       [{"priority": "10", "value": "mx.zoho.com"}, {"priority": "20", "value": "mx2.zoho.com"}],
+        "ovh":        [{"priority": "1", "value": "mx1.mail.ovh.net"}, {"priority": "5", "value": "mx2.mail.ovh.net"}],
+        "infomaniak": [{"priority": "10", "value": "mta-gw.infomaniak.ch"}],
+        "protonmail": [{"priority": "10", "value": "mail.protonmail.ch"}, {"priority": "20", "value": "mailsec.protonmail.ch"}],
+    }
+
+    if email_comp or email_provider:
+        prov_info = provider_urls.get(email_provider, {})
+        dash = email_dashboard or prov_info.get("dashboard", "")
+        webmail = email_webmail or prov_info.get("webmail", "")
+        mx = email_mx.get(email_provider, [])
+
+        details = {"provider": email_provider or "non configure"}
+        if email_addresses:
+            details["adresses"] = email_addresses
+        if mx and not email_cfg.get("mx_configured"):
+            details["MX_requis"] = " / ".join(m["value"] for m in mx[:2])
+
+        if email_provider and email_addresses:
+            connections.append({
+                "type": "email", "label": f"Email ({email_provider})",
+                "status": "connected",
+                "url": webmail or dash,
+                "details": details,
+                "actions": [
+                    {"label": "Ouvrir webmail", "url": webmail, "action_type": "open_hosting"} if webmail else None,
+                    {"label": "Dashboard", "url": dash, "action_type": "open_hosting"} if dash else None,
+                    {"label": "Modifier", "action_type": "setup_email"},
+                ],
+            })
+            connections[-1]["actions"] = [a for a in connections[-1]["actions"] if a]
+        elif email_provider:
+            connections.append({
+                "type": "email", "label": f"Email ({email_provider})",
+                "status": "a_configurer",
+                "url": "", "details": details,
+                "actions": [
+                    {"label": "Configurer", "action_type": "setup_email"},
+                    {"label": f"Ouvrir {email_provider}", "url": dash or prov_info.get("buy", ""), "action_type": "open_hosting"} if dash else None,
+                ],
+            })
+            connections[-1]["actions"] = [a for a in connections[-1]["actions"] if a]
+        else:
+            connections.append({
+                "type": "email", "label": "Email professionnel",
+                "status": "non_connecte",
+                "url": "", "details": {},
+                "actions": [{"label": "Configurer email", "action_type": "setup_email"}],
+            })
+    elif domain:
+        # Domain exists but no email configured — suggest it
+        connections.append({
+            "type": "email", "label": "Email professionnel",
+            "status": "non_connecte",
+            "url": "", "details": {"suggestion": f"contact@{domain}"},
+            "actions": [{"label": "Configurer email", "action_type": "setup_email"}],
         })
 
     # ──── BASE DE DONNEES ────
