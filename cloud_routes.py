@@ -1345,6 +1345,69 @@ def api_get_hosting_token(aid):
     return jsonify({"error": "Compte introuvable"}), 404
 
 
+@cloud_bp.route("/api/server/test", methods=["POST"])
+def api_test_ssh():
+    """Test SSH connection to a server."""
+    import subprocess
+    data = request.json or {}
+    ip = data.get("ip", "").strip()
+    user = data.get("ssh_user", "root").strip()
+    ssh_key = data.get("ssh_key", "").strip()
+
+    if not ip:
+        return jsonify({"success": False, "status": "error", "message": "IP requise"})
+
+    # Build SSH command
+    cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+           "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes"]
+    if ssh_key:
+        cmd.extend(["-i", os.path.expanduser(ssh_key)])
+    else:
+        # Try common key paths
+        for key_path in ["~/.ssh/id_ed25519", "~/.ssh/id_rsa", "~/.ssh/id_vps"]:
+            expanded = os.path.expanduser(key_path)
+            if os.path.isfile(expanded):
+                cmd.extend(["-i", expanded])
+                break
+
+    cmd.append(f"{user}@{ip}")
+    cmd.append("echo SSH_OK && hostname && uptime -p")
+
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if r.returncode == 0 and "SSH_OK" in r.stdout:
+            lines = r.stdout.strip().split("\n")
+            hostname = lines[1] if len(lines) > 1 else ""
+            uptime = lines[2] if len(lines) > 2 else ""
+            return jsonify({
+                "success": True, "status": "connected",
+                "message": f"Connecte a {hostname}",
+                "hostname": hostname, "uptime": uptime,
+            })
+        else:
+            return jsonify({
+                "success": False, "status": "failed",
+                "message": r.stderr.strip()[:200] or "Connexion refusee",
+            })
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "status": "timeout", "message": "Timeout — serveur injoignable"})
+    except Exception as e:
+        return jsonify({"success": False, "status": "error", "message": str(e)[:200]})
+
+
+@cloud_bp.route("/api/server/keys")
+def api_list_ssh_keys():
+    """List available SSH keys."""
+    keys = []
+    ssh_dir = os.path.expanduser("~/.ssh")
+    if os.path.isdir(ssh_dir):
+        for f in sorted(os.listdir(ssh_dir)):
+            path = os.path.join(ssh_dir, f)
+            if os.path.isfile(path) and not f.endswith(".pub") and not f.startswith("known") and not f == "config" and not f == "authorized_keys":
+                keys.append({"name": f, "path": path})
+    return jsonify(keys)
+
+
 @cloud_bp.route("/api/projects/<int:pid>/hosting", methods=["POST"])
 def api_link_hosting(pid):
     """Link a project to a hosting account."""

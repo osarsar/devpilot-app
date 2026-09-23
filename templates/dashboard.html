@@ -3589,12 +3589,21 @@ function wsSetupServer() {
             + '<input class="form-input" id="srv-ssh" value="' + (d.SSH ? d.SSH.split('@')[0] : '') + '" placeholder="root ou ubuntu" style="font-size:12px;padding:6px 8px">'
             + '</div>'
 
+            // SSH Key selector
+            + '<div style="margin-bottom:10px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">Cle SSH</div>'
+            + '<select class="form-input" id="srv-key" style="font-size:12px;padding:6px 8px">'
+            + '<option value="">Automatique</option></select>'
+            + '</div>'
+
             // Dashboard URL
             + '<div style="margin-bottom:10px">'
             + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">Lien direct vers le dashboard du serveur</div>'
             + '<input class="form-input" id="srv-dashboard" value="' + (srv?.url || '') + '" placeholder="https://www.ovh.com/manager/#/dedicated/vps/..." style="font-size:11px;padding:5px 8px">'
-            + '<div style="font-size:9px;color:var(--text-4);margin-top:2px">Copie le lien de la page de gestion de ton serveur</div>'
             + '</div>'
+
+            // Status
+            + '<div id="srv-status" style="font-size:11px;min-height:16px;margin-bottom:10px"></div>'
 
             // Quick links
             + '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">';
@@ -3604,12 +3613,27 @@ function wsSetupServer() {
         html += '</div>'
 
             + '<div class="flex gap-6">'
-            + '<button class="btn btn-xs btn-primary" onclick="wsSaveServer()">Enregistrer</button>'
+            + '<button class="btn btn-xs btn-primary" onclick="wsSaveServer()">Tester et enregistrer</button>'
             + '<button class="btn btn-xs" onclick="document.getElementById(\'conn-paste-server\').style.display=\'none\'">Annuler</button>'
             + '</div></div>';
 
         pasteEl.innerHTML = html;
         pasteEl.style.display = 'block';
+
+        // Load SSH keys into selector
+        api('server/keys').then(function(keys) {
+            const sel = document.getElementById('srv-key');
+            if (!sel) return;
+            const savedKey = (srv?.details?.ssh_key) || '';
+            for (const k of keys) {
+                const opt = document.createElement('option');
+                opt.value = k.path;
+                opt.textContent = k.name + ' (' + k.path + ')';
+                if (k.path === savedKey) opt.selected = true;
+                sel.appendChild(opt);
+            }
+        });
+
         setTimeout(function() { document.getElementById('srv-ip')?.focus(); }, 100);
     });
 }
@@ -3619,14 +3643,37 @@ async function wsSaveServer() {
     if (!ip) { toast('Entre l\'adresse IP', 'error'); return; }
     const provider = document.getElementById('srv-provider')?.value || '';
     const ssh_user = document.getElementById('srv-ssh')?.value.trim() || 'root';
+    const ssh_key = document.getElementById('srv-key')?.value || '';
     const dashboard = document.getElementById('srv-dashboard')?.value.trim() || '';
 
-    await apiPost('projects/' + wsProjectId + '/connections', {
-        type: 'server',
-        config: {ip: ip, provider: provider, ssh_user: ssh_user, dashboard_url: dashboard}
-    });
-    toast('Serveur ' + ip + ' enregistre');
-    loadWsConnections();
+    // Test SSH first
+    const statusEl = document.getElementById('srv-status');
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-3)">Test de connexion SSH...</span>';
+
+    const test = await apiPost('server/test', {ip: ip, ssh_user: ssh_user, ssh_key: ssh_key});
+
+    if (test.success) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--emerald)">Connecte — ' + (test.hostname || ip) + (test.uptime ? ' (' + test.uptime + ')' : '') + '</span>';
+
+        await apiPost('projects/' + wsProjectId + '/connections', {
+            type: 'server',
+            config: {ip: ip, provider: provider, ssh_user: ssh_user, ssh_key: ssh_key, dashboard_url: dashboard, ssh_verified: true, hostname: test.hostname || ''}
+        });
+        toast('Serveur ' + ip + ' connecte');
+        setTimeout(function() { loadWsConnections(); }, 1500);
+    } else {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--rose)">' + (test.message || 'Connexion echouee') + '</span>';
+        // Save anyway but mark as not verified
+        const saveAnyway = confirm('La connexion SSH a echoue. Enregistrer quand meme les infos ?');
+        if (saveAnyway) {
+            await apiPost('projects/' + wsProjectId + '/connections', {
+                type: 'server',
+                config: {ip: ip, provider: provider, ssh_user: ssh_user, ssh_key: ssh_key, dashboard_url: dashboard, ssh_verified: false}
+            });
+            toast('Serveur enregistre (non verifie)');
+            loadWsConnections();
+        }
+    }
 }
 
 // Setup email
