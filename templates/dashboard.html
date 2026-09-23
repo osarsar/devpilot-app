@@ -3098,6 +3098,18 @@ async function loadWsConnections() {
                     actionBtns += '<button class="btn btn-xs" onclick="wsRegenToken(\'' + (act.url || '') + '\')" style="flex-shrink:0">' + act.label + '</button>';
                 } else if (act.action_type === 'enter_site_url') {
                     actionBtns += '<button class="btn btn-xs btn-primary" onclick="wsEnterSiteUrl()" style="flex-shrink:0">' + act.label + '</button>';
+                } else if (act.action_type === 'change_hosting_account') {
+                    actionBtns += '<button class="btn btn-xs" onclick="wsChangeHostingAccount()" style="flex-shrink:0">' + act.label + '</button>';
+                } else if (act.action_type === 'setup_deploy') {
+                    actionBtns += '<button class="btn btn-xs" onclick="wsSetupDeploy()" style="flex-shrink:0">' + act.label + '</button>';
+                } else if (act.action_type === 'setup_database') {
+                    actionBtns += '<button class="btn btn-xs" onclick="wsSetupDatabase()" style="flex-shrink:0">' + act.label + '</button>';
+                } else if (act.action_type === 'setup_storage') {
+                    actionBtns += '<button class="btn btn-xs" onclick="wsSetupStorage()" style="flex-shrink:0">' + act.label + '</button>';
+                } else if (act.action_type === 'setup_server' || act.action_type === 'add_server') {
+                    actionBtns += '<button class="btn btn-xs btn-primary" onclick="wsSetupServer()" style="flex-shrink:0">' + act.label + '</button>';
+                } else if (act.action_type === 'setup_backup') {
+                    actionBtns += '<button class="btn btn-xs" onclick="wsSetupBackup()" style="flex-shrink:0">' + act.label + '</button>';
                 } else if (act.action_type === 'setup_email') {
                     actionBtns += '<button class="btn btn-xs btn-primary" onclick="wsSetupEmail()" style="flex-shrink:0">' + act.label + '</button>';
                 } else if (act.action_type === 'setup_domain' || act.action_type === 'edit_domain') {
@@ -3314,6 +3326,166 @@ async function wsSelectHostingAccount(accountId) {
     }
 }
 
+// Change hosting account — show picker to switch to a different account
+function wsChangeHostingAccount() {
+    wsSetupDeploy();
+}
+
+// Guided deploy setup — platform + account + URLs
+async function wsSetupDeploy() {
+    const pasteEl = document.getElementById('conn-paste-deploy');
+    if (!pasteEl) return;
+
+    const platforms = [
+        {key:'vercel', label:'Vercel', icon:'▲', tokenUrl:'https://vercel.com/account/tokens'},
+        {key:'netlify', label:'Netlify', icon:'◆', tokenUrl:'https://app.netlify.com/user/applications#personal-access-tokens'},
+        {key:'railway', label:'Railway', icon:'🚂', tokenUrl:'https://railway.app/account/tokens'},
+        {key:'render', label:'Render', icon:'▸', tokenUrl:'https://dashboard.render.com/settings#api-keys'},
+        {key:'cloudflare', label:'Cloudflare Pages', icon:'☁️', tokenUrl:'https://dash.cloudflare.com/profile/api-tokens'},
+    ];
+
+    // Fetch current data + accounts in parallel
+    const [connData, accounts] = await Promise.all([
+        api('projects/' + wsProjectId + '/connections'),
+        api('hosting/accounts')
+    ]);
+    const deploy = (connData.connections || []).find(function(c) { return c.type === 'deploy'; });
+    const currentPlatform = deploy?.details?.plateforme || deploy?.details?.platform || '';
+    const currentAccountId = deploy?.details?.account_id || '';
+    const currentSiteUrl = deploy?.details?.site || '';
+    const currentDashUrl = deploy?.details?.dashboard || '';
+
+    // Also get account_id from component
+    const comps = await api('projects/' + wsProjectId + '/components');
+    const deployComp = (comps || []).find(function(c) { return c.component === 'deploy'; });
+    const acctId = deployComp?.config?.account_id || currentAccountId;
+
+    let html = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:14px">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--violet);margin-bottom:12px">Configurer le deploiement</div>';
+
+    // Step 1: Platform
+    html += '<div style="margin-bottom:12px">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:6px">1. Plateforme</div>'
+        + '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px">';
+    for (const p of platforms) {
+        const sel = p.key === currentPlatform ? 'border:2px solid var(--violet)' : 'border:1px solid var(--border-1)';
+        html += '<div onclick="wsDeployPickPlatform(\'' + p.key + '\')" class="deploy-plat" data-plat="' + p.key + '" '
+            + 'style="padding:8px 4px;border-radius:6px;' + sel + ';cursor:pointer;text-align:center;transition:all .15s">'
+            + '<div style="font-size:18px">' + p.icon + '</div>'
+            + '<div style="font-size:10px;font-weight:600;color:var(--text-0)">' + p.label + '</div></div>';
+    }
+    html += '</div><input type="hidden" id="deploy-platform" value="' + currentPlatform + '"></div>';
+
+    // Step 2: Account
+    html += '<div style="margin-bottom:12px">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:6px">2. Compte</div>'
+        + '<div id="deploy-accounts-list">';
+    const filtered = accounts.filter(function(a) { return !currentPlatform || a.platform === currentPlatform; });
+    if (filtered.length > 0) {
+        for (const a of filtered) {
+            const isCurrent = a.id === acctId;
+            html += '<div onclick="document.querySelectorAll(\'.deploy-acct\').forEach(function(e){e.style.border=\'1px solid var(--border-1)\'});this.style.border=\'2px solid var(--violet)\';document.getElementById(\'deploy-account-id\').value=\'' + a.id + '\'" '
+                + 'class="deploy-acct" style="padding:8px 10px;border-radius:6px;' + (isCurrent ? 'border:2px solid var(--violet)' : 'border:1px solid var(--border-1)') + ';cursor:pointer;margin-bottom:4px;display:flex;align-items:center;gap:8px;transition:all .15s">'
+                + '<div style="flex:1"><div style="font-size:11px;font-weight:600;color:var(--text-0)">' + (a.email || a.name) + '</div>'
+                + '<div style="font-size:9px;color:var(--text-4)">' + a.platform + (a.username ? ' @' + a.username : '') + '</div></div>'
+                + '<span style="font-size:9px;color:' + (a.token_set ? 'var(--emerald)' : 'var(--rose)') + '">' + (a.token_set ? 'Token OK' : 'Expire') + '</span>'
+                + '</div>';
+        }
+    } else {
+        html += '<div style="font-size:10px;color:var(--text-4);margin-bottom:6px">Aucun compte pour cette plateforme</div>';
+    }
+    html += '</div><input type="hidden" id="deploy-account-id" value="' + acctId + '">'
+        + '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-0)">'
+        + '<div style="font-size:10px;font-weight:600;color:var(--text-3);margin-bottom:4px">Ajouter un nouveau compte</div>'
+        + '<div style="display:flex;gap:4px">'
+        + '<input class="form-input" id="deploy-new-token" type="password" placeholder="Coller le token" style="font-size:11px;padding:5px 8px;flex:1">'
+        + '<button class="btn btn-xs" id="deploy-gen-link" onclick="var p=document.getElementById(\'deploy-platform\').value;var urls={vercel:\'https://vercel.com/account/tokens\',netlify:\'https://app.netlify.com/user/applications#personal-access-tokens\',railway:\'https://railway.app/account/tokens\',render:\'https://dashboard.render.com/settings#api-keys\',cloudflare:\'https://dash.cloudflare.com/profile/api-tokens\'};window.open(urls[p]||\'#\',\'_blank\')">Generer</button>'
+        + '<button class="btn btn-xs btn-primary" onclick="wsDeployAddAccount()">Ajouter</button>'
+        + '</div><div id="deploy-add-status" style="font-size:10px;min-height:14px;margin-top:4px"></div></div></div>';
+
+    // Step 3: URLs
+    html += '<div style="margin-bottom:12px">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">3. URLs</div>'
+        + '<input class="form-input" id="deploy-site-url" value="' + (currentSiteUrl || '') + '" placeholder="https://mon-site.vercel.app" style="font-size:11px;padding:5px 8px;margin-bottom:4px">'
+        + '<input class="form-input" id="deploy-dash-url" value="' + (currentDashUrl || '') + '" placeholder="https://vercel.com/user/projet (dashboard)" style="font-size:11px;padding:5px 8px">'
+        + '</div>';
+
+    html += '<div class="flex gap-6">'
+        + '<button class="btn btn-xs btn-primary" onclick="wsSaveDeploy()">Enregistrer</button>'
+        + '<button class="btn btn-xs" onclick="document.getElementById(\'conn-paste-deploy\').style.display=\'none\'">Annuler</button>'
+        + '</div></div>';
+
+    pasteEl.innerHTML = html;
+    pasteEl.style.display = 'block';
+    window._deployPlatforms = platforms;
+    window._deployAccounts = accounts;
+}
+
+function wsDeployPickPlatform(plat) {
+    document.querySelectorAll('.deploy-plat').forEach(function(e) { e.style.border = '1px solid var(--border-1)'; });
+    var el = document.querySelector('.deploy-plat[data-plat="' + plat + '"]');
+    if (el) el.style.border = '2px solid var(--violet)';
+    document.getElementById('deploy-platform').value = plat;
+    // Filter accounts by platform
+    var accounts = window._deployAccounts || [];
+    var filtered = accounts.filter(function(a) { return a.platform === plat; });
+    var listEl = document.getElementById('deploy-accounts-list');
+    var html = '';
+    if (filtered.length > 0) {
+        for (var i = 0; i < filtered.length; i++) {
+            var a = filtered[i];
+            html += '<div onclick="document.querySelectorAll(\'.deploy-acct\').forEach(function(e){e.style.border=\'1px solid var(--border-1)\'});this.style.border=\'2px solid var(--violet)\';document.getElementById(\'deploy-account-id\').value=\'' + a.id + '\'" '
+                + 'class="deploy-acct" style="padding:8px 10px;border-radius:6px;border:1px solid var(--border-1);cursor:pointer;margin-bottom:4px;display:flex;align-items:center;gap:8px;transition:all .15s">'
+                + '<div style="flex:1"><div style="font-size:11px;font-weight:600;color:var(--text-0)">' + (a.email || a.name) + '</div>'
+                + '<div style="font-size:9px;color:var(--text-4)">' + a.platform + (a.username ? ' @' + a.username : '') + '</div></div>'
+                + '<span style="font-size:9px;color:' + (a.token_set ? 'var(--emerald)' : 'var(--rose)') + '">' + (a.token_set ? 'Token OK' : 'Expire') + '</span>'
+                + '</div>';
+        }
+    } else {
+        html += '<div style="font-size:10px;color:var(--text-4);margin-bottom:6px">Aucun compte pour ' + plat + '</div>';
+    }
+    listEl.innerHTML = html;
+    document.getElementById('deploy-account-id').value = '';
+}
+
+async function wsDeployAddAccount() {
+    var platform = document.getElementById('deploy-platform').value;
+    var token = document.getElementById('deploy-new-token').value.trim();
+    var statusEl = document.getElementById('deploy-add-status');
+    if (!platform) { toast('Choisis une plateforme', 'error'); return; }
+    if (!token) { toast('Colle le token', 'error'); return; }
+    statusEl.innerHTML = '<span style="color:var(--text-3)">Verification...</span>';
+    var r = await apiPost('hosting/accounts', {platform: platform, token: token});
+    if (r.success) {
+        statusEl.innerHTML = '<span style="color:var(--emerald)">Compte verifie: ' + (r.email || r.name || '') + '</span>';
+        toast('Compte ajoute');
+        setTimeout(function() { wsSetupDeploy(); }, 800);
+    } else {
+        statusEl.innerHTML = '<span style="color:var(--rose)">' + (r.message || 'Token invalide') + '</span>';
+    }
+}
+
+async function wsSaveDeploy() {
+    var platform = document.getElementById('deploy-platform').value;
+    var accountId = document.getElementById('deploy-account-id').value;
+    var siteUrl = document.getElementById('deploy-site-url').value.trim();
+    var dashUrl = document.getElementById('deploy-dash-url').value.trim();
+    if (!platform) { toast('Choisis une plateforme', 'error'); return; }
+
+    // Link account if selected
+    if (accountId) {
+        await apiPost('projects/' + wsProjectId + '/hosting', {account_id: accountId, site_url: siteUrl, project_url: dashUrl});
+    }
+    // Save URLs + platform
+    await apiPost('projects/' + wsProjectId + '/connections', {
+        type: 'deploy',
+        config: {platform: platform, site_url: siteUrl, project_url: dashUrl}
+    });
+    toast('Deploiement configure');
+    document.getElementById('conn-paste-deploy').style.display = 'none';
+    loadWsConnections();
+}
+
 // Regen token — open token page then show paste input for new token
 function wsRegenToken(tokenPageUrl) {
     if (tokenPageUrl) window.open(tokenPageUrl, '_blank');
@@ -3370,6 +3542,90 @@ async function wsSaveSiteUrl() {
     if (projectUrl) config.project_url = projectUrl;
     await apiPost('projects/' + wsProjectId + '/connections', {type: 'deploy', config: config});
     toast('URL du site enregistree');
+    loadWsConnections();
+}
+
+// Setup server
+function wsSetupServer() {
+    const pasteEl = document.getElementById('conn-paste-server');
+    if (!pasteEl) return;
+
+    const providers = [
+        {key:'ovh', label:'OVH / OVHcloud', dashboard:'https://www.ovh.com/manager/#/dedicated/vps'},
+        {key:'digitalocean', label:'DigitalOcean', dashboard:'https://cloud.digitalocean.com/droplets'},
+        {key:'hetzner', label:'Hetzner', dashboard:'https://console.hetzner.cloud/'},
+        {key:'contabo', label:'Contabo', dashboard:'https://my.contabo.com/'},
+        {key:'scaleway', label:'Scaleway', dashboard:'https://console.scaleway.com/'},
+        {key:'aws', label:'AWS EC2', dashboard:'https://console.aws.amazon.com/ec2/'},
+        {key:'other', label:'Autre', dashboard:''},
+    ];
+
+    // Pre-fill from existing config
+    api('projects/' + wsProjectId + '/connections').then(function(data) {
+        const srv = (data.connections || []).find(function(c) { return c.type === 'server'; });
+        const d = srv?.details || {};
+
+        let html = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:14px">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--violet);margin-bottom:12px">Configurer le serveur</div>'
+
+            // IP
+            + '<div style="margin-bottom:10px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">Adresse IP du serveur</div>'
+            + '<input class="form-input" id="srv-ip" value="' + (d.IP || '') + '" placeholder="148.113.240.123" style="font-size:12px;padding:6px 8px">'
+            + '</div>'
+
+            // Provider
+            + '<div style="margin-bottom:10px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">Provider</div>'
+            + '<select class="form-input" id="srv-provider" style="font-size:12px;padding:6px 8px">';
+        for (const p of providers) {
+            html += '<option value="' + p.key + '"' + ((d.provider || '').toLowerCase() === p.key ? ' selected' : '') + '>' + p.label + '</option>';
+        }
+        html += '</select></div>'
+
+            // SSH user
+            + '<div style="margin-bottom:10px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">Utilisateur SSH</div>'
+            + '<input class="form-input" id="srv-ssh" value="' + (d.SSH ? d.SSH.split('@')[0] : '') + '" placeholder="root ou ubuntu" style="font-size:12px;padding:6px 8px">'
+            + '</div>'
+
+            // Dashboard URL
+            + '<div style="margin-bottom:10px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">Lien direct vers le dashboard du serveur</div>'
+            + '<input class="form-input" id="srv-dashboard" value="' + (srv?.url || '') + '" placeholder="https://www.ovh.com/manager/#/dedicated/vps/..." style="font-size:11px;padding:5px 8px">'
+            + '<div style="font-size:9px;color:var(--text-4);margin-top:2px">Copie le lien de la page de gestion de ton serveur</div>'
+            + '</div>'
+
+            // Quick links
+            + '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">';
+        for (const p of providers) {
+            if (p.dashboard) html += '<button class="btn btn-xs" onclick="window.open(\'' + p.dashboard + '\',\'_blank\')" style="font-size:9px">' + p.label + '</button>';
+        }
+        html += '</div>'
+
+            + '<div class="flex gap-6">'
+            + '<button class="btn btn-xs btn-primary" onclick="wsSaveServer()">Enregistrer</button>'
+            + '<button class="btn btn-xs" onclick="document.getElementById(\'conn-paste-server\').style.display=\'none\'">Annuler</button>'
+            + '</div></div>';
+
+        pasteEl.innerHTML = html;
+        pasteEl.style.display = 'block';
+        setTimeout(function() { document.getElementById('srv-ip')?.focus(); }, 100);
+    });
+}
+
+async function wsSaveServer() {
+    const ip = document.getElementById('srv-ip')?.value.trim();
+    if (!ip) { toast('Entre l\'adresse IP', 'error'); return; }
+    const provider = document.getElementById('srv-provider')?.value || '';
+    const ssh_user = document.getElementById('srv-ssh')?.value.trim() || 'root';
+    const dashboard = document.getElementById('srv-dashboard')?.value.trim() || '';
+
+    await apiPost('projects/' + wsProjectId + '/connections', {
+        type: 'server',
+        config: {ip: ip, provider: provider, ssh_user: ssh_user, dashboard_url: dashboard}
+    });
+    toast('Serveur ' + ip + ' enregistre');
     loadWsConnections();
 }
 
@@ -3582,6 +3838,239 @@ async function wsSaveDomain() {
     loadWsConnections();
 }
 
+// Guided database setup
+function wsSetupDatabase() {
+    const pasteEl = document.getElementById('conn-paste-database');
+    if (!pasteEl) return;
+
+    const providers = [
+        {key:'supabase', label:'Supabase', port:'5432', hint:'db.xyz.supabase.co', buy:'https://supabase.com/dashboard'},
+        {key:'neon', label:'Neon', port:'5432', hint:'ep-xxx.us-east-2.aws.neon.tech', buy:'https://console.neon.tech/'},
+        {key:'planetscale', label:'PlanetScale', port:'3306', hint:'aws.connect.psdb.cloud', buy:'https://app.planetscale.com/'},
+        {key:'railway', label:'Railway', port:'5432', hint:'roundhouse.proxy.rlwy.net', buy:'https://railway.app/'},
+        {key:'postgres', label:'PostgreSQL local', port:'5432', hint:'localhost'},
+        {key:'mysql', label:'MySQL local', port:'3306', hint:'localhost'},
+        {key:'sqlite', label:'SQLite', port:'', hint:''},
+    ];
+
+    api('projects/' + wsProjectId + '/connections').then(function(data) {
+        const dbConn = (data.connections || []).find(function(c) { return c.type === 'database'; });
+        const cur = dbConn?.details || {};
+
+        let html = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:14px">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--violet);margin-bottom:12px">Configurer la base de donnees</div>';
+
+        // Step 1: Provider
+        html += '<div style="margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:6px">1. Provider</div>'
+            + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">';
+        for (const p of providers) {
+            const sel = (cur.type === p.key || cur.provider === p.key) ? 'border:2px solid var(--violet)' : 'border:1px solid var(--border-1)';
+            html += '<div onclick="wsDbPickProvider(\'' + p.key + '\')" class="db-prov" data-prov="' + p.key + '" '
+                + 'style="padding:8px 4px;border-radius:6px;' + sel + ';cursor:pointer;text-align:center;transition:all .15s">'
+                + '<div style="font-size:11px;font-weight:600;color:var(--text-0)">' + p.label + '</div></div>';
+        }
+        html += '</div><input type="hidden" id="db-provider" value="' + (cur.type || cur.provider || '') + '"></div>';
+
+        // Step 2: Connection
+        html += '<div id="db-fields" style="margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">2. Connexion</div>'
+            + '<div style="display:grid;grid-template-columns:3fr 1fr;gap:4px;margin-bottom:4px">'
+            + '<input class="form-input" id="db-host" value="' + (cur.host || '') + '" placeholder="Host" style="font-size:11px;padding:5px 8px">'
+            + '<input class="form-input" id="db-port" value="' + (cur.port || '') + '" placeholder="Port" style="font-size:11px;padding:5px 8px">'
+            + '</div>'
+            + '<input class="form-input" id="db-name" value="' + (cur.nom || cur.name || '') + '" placeholder="Nom de la base" style="font-size:11px;padding:5px 8px;margin-bottom:4px">'
+            + '<input class="form-input" id="db-connstring" type="password" placeholder="Connection string (optionnel)" style="font-size:11px;padding:5px 8px">'
+            + '</div>';
+
+        // Step 3: Dashboard
+        html += '<div style="margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">3. Dashboard (optionnel)</div>'
+            + '<input class="form-input" id="db-dashboard" placeholder="https://supabase.com/dashboard/..." style="font-size:11px;padding:5px 8px">'
+            + '</div>';
+
+        html += '<div class="flex gap-6">'
+            + '<button class="btn btn-xs btn-primary" onclick="wsSaveDatabase()">Enregistrer</button>'
+            + '<button class="btn btn-xs" onclick="document.getElementById(\'conn-paste-database\').style.display=\'none\'">Annuler</button>'
+            + '</div></div>';
+
+        pasteEl.innerHTML = html;
+        pasteEl.style.display = 'block';
+        window._dbProviders = providers;
+    });
+}
+
+function wsDbPickProvider(prov) {
+    document.querySelectorAll('.db-prov').forEach(function(e) { e.style.border = '1px solid var(--border-1)'; });
+    var el = document.querySelector('.db-prov[data-prov="' + prov + '"]');
+    if (el) el.style.border = '2px solid var(--violet)';
+    document.getElementById('db-provider').value = prov;
+    var p = (window._dbProviders || []).find(function(x) { return x.key === prov; });
+    if (p) {
+        var hostEl = document.getElementById('db-host');
+        var portEl = document.getElementById('db-port');
+        if (!hostEl.value) hostEl.placeholder = p.hint || 'Host';
+        if (!portEl.value && p.port) portEl.value = p.port;
+        if (p.buy) {
+            var dashEl = document.getElementById('db-dashboard');
+            if (!dashEl.value) dashEl.placeholder = p.buy + '/...';
+        }
+    }
+    // Hide fields for SQLite
+    var fieldsEl = document.getElementById('db-fields');
+    if (prov === 'sqlite') {
+        fieldsEl.innerHTML = '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">2. Fichier</div>'
+            + '<input class="form-input" id="db-host" placeholder="./data/database.sqlite" style="font-size:11px;padding:5px 8px">'
+            + '<input type="hidden" id="db-port" value=""><input type="hidden" id="db-name" value=""><input type="hidden" id="db-connstring" value="">';
+    }
+}
+
+async function wsSaveDatabase() {
+    var provider = document.getElementById('db-provider').value;
+    if (!provider) { toast('Choisis un provider', 'error'); return; }
+    var host = document.getElementById('db-host').value.trim();
+    var port = document.getElementById('db-port').value.trim();
+    var name = document.getElementById('db-name').value.trim();
+    var connStr = document.getElementById('db-connstring').value.trim();
+    var dashboard = document.getElementById('db-dashboard').value.trim();
+
+    await apiPost('projects/' + wsProjectId + '/connections', {
+        type: 'database',
+        config: {type: provider, provider: provider, host: host, port: port, name: name, connection_string: connStr || undefined, dashboard_url: dashboard || undefined}
+    });
+    toast('Base de donnees configuree');
+    document.getElementById('conn-paste-database').style.display = 'none';
+    loadWsConnections();
+}
+
+// Guided storage setup
+function wsSetupStorage() {
+    const pasteEl = document.getElementById('conn-paste-storage');
+    if (!pasteEl) return;
+
+    const providers = [
+        {key:'r2', label:'Cloudflare R2', buy:'https://dash.cloudflare.com/'},
+        {key:'s3', label:'AWS S3', buy:'https://s3.console.aws.amazon.com/'},
+        {key:'other', label:'Autre'},
+    ];
+
+    api('projects/' + wsProjectId + '/connections').then(function(data) {
+        const storageConn = (data.connections || []).find(function(c) { return c.type === 'storage'; });
+        const cur = storageConn?.details || {};
+
+        let html = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:14px">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--violet);margin-bottom:12px">Configurer le stockage</div>';
+
+        // Step 1: Provider
+        html += '<div style="margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:6px">1. Provider</div>'
+            + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">';
+        for (const p of providers) {
+            html += '<div onclick="document.querySelectorAll(\'.storage-prov\').forEach(function(e){e.style.border=\'1px solid var(--border-1)\'});this.style.border=\'2px solid var(--violet)\';document.getElementById(\'storage-provider\').value=\'' + p.key + '\'" '
+                + 'class="storage-prov" style="padding:10px 4px;border-radius:6px;border:1px solid var(--border-1);cursor:pointer;text-align:center;transition:all .15s">'
+                + '<div style="font-size:11px;font-weight:600;color:var(--text-0)">' + p.label + '</div></div>';
+        }
+        html += '</div><input type="hidden" id="storage-provider" value=""></div>';
+
+        // Step 2: Bucket
+        html += '<div style="margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">2. Nom du bucket</div>'
+            + '<input class="form-input" id="storage-bucket" value="' + (cur.bucket || '') + '" placeholder="mon-projet-uploads" style="font-size:12px;padding:6px 8px">'
+            + '</div>';
+
+        // Step 3: Dashboard
+        html += '<div style="margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">3. Dashboard (optionnel)</div>'
+            + '<input class="form-input" id="storage-dashboard" placeholder="https://dash.cloudflare.com/..." style="font-size:11px;padding:5px 8px">'
+            + '</div>';
+
+        html += '<div class="flex gap-6">'
+            + '<button class="btn btn-xs btn-primary" onclick="wsSaveStorage()">Enregistrer</button>'
+            + '<button class="btn btn-xs" onclick="document.getElementById(\'conn-paste-storage\').style.display=\'none\'">Annuler</button>'
+            + '</div></div>';
+
+        pasteEl.innerHTML = html;
+        pasteEl.style.display = 'block';
+    });
+}
+
+async function wsSaveStorage() {
+    var bucket = document.getElementById('storage-bucket').value.trim();
+    var dashboard = document.getElementById('storage-dashboard').value.trim();
+    if (!bucket) { toast('Entre le nom du bucket', 'error'); return; }
+    await apiPost('projects/' + wsProjectId + '/connections', {
+        type: 'storage',
+        config: {bucket: bucket, dashboard_url: dashboard || undefined}
+    });
+    toast('Stockage configure');
+    document.getElementById('conn-paste-storage').style.display = 'none';
+    loadWsConnections();
+}
+
+// Guided backup setup
+function wsSetupBackup() {
+    const pasteEl = document.getElementById('conn-paste-backup');
+    if (!pasteEl) return;
+
+    api('projects/' + wsProjectId + '/connections').then(function(data) {
+        const backupConn = (data.connections || []).find(function(c) { return c.type === 'backup'; });
+        const cur = backupConn?.details || {};
+
+        let html = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:14px">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--violet);margin-bottom:12px">Configurer les backups</div>';
+
+        // Step 1: Destination
+        html += '<div style="margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:6px">1. Destination</div>'
+            + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">';
+        for (const d of [{key:'r2',label:'Cloudflare R2'},{key:'s3',label:'AWS S3'},{key:'local',label:'Local'}]) {
+            html += '<div onclick="document.querySelectorAll(\'.backup-dest\').forEach(function(e){e.style.border=\'1px solid var(--border-1)\'});this.style.border=\'2px solid var(--violet)\';document.getElementById(\'backup-destination\').value=\'' + d.key + '\';document.getElementById(\'backup-bucket-row\').style.display=\'' + (d.key==='local'?'none':'block') + '\'" '
+                + 'class="backup-dest" style="padding:10px 4px;border-radius:6px;border:1px solid var(--border-1);cursor:pointer;text-align:center;transition:all .15s">'
+                + '<div style="font-size:11px;font-weight:600;color:var(--text-0)">' + d.label + '</div></div>';
+        }
+        html += '</div><input type="hidden" id="backup-destination" value=""></div>';
+
+        // Step 2: Bucket
+        html += '<div id="backup-bucket-row" style="margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:4px">2. Bucket</div>'
+            + '<input class="form-input" id="backup-bucket" value="' + (cur.bucket || '') + '" placeholder="mon-projet-backups" style="font-size:12px;padding:6px 8px">'
+            + '</div>';
+
+        // Step 3: Frequency
+        html += '<div style="margin-bottom:12px">'
+            + '<div style="font-size:11px;font-weight:600;color:var(--text-1);margin-bottom:6px">3. Frequence</div>'
+            + '<div style="display:flex;gap:6px">';
+        for (const f of [{key:'daily',label:'Quotidien'},{key:'weekly',label:'Hebdomadaire'},{key:'manual',label:'Manuel'}]) {
+            const sel = cur.frequence === f.key ? 'border:2px solid var(--violet)' : 'border:1px solid var(--border-1)';
+            html += '<div onclick="document.querySelectorAll(\'.backup-freq\').forEach(function(e){e.style.border=\'1px solid var(--border-1)\'});this.style.border=\'2px solid var(--violet)\';document.getElementById(\'backup-frequency\').value=\'' + f.key + '\'" '
+                + 'class="backup-freq" style="padding:6px 14px;border-radius:6px;' + sel + ';cursor:pointer;font-size:11px;font-weight:600;color:var(--text-0);transition:all .15s">' + f.label + '</div>';
+        }
+        html += '</div><input type="hidden" id="backup-frequency" value="' + (cur.frequence || '') + '"></div>';
+
+        html += '<div class="flex gap-6">'
+            + '<button class="btn btn-xs btn-primary" onclick="wsSaveBackup()">Enregistrer</button>'
+            + '<button class="btn btn-xs" onclick="document.getElementById(\'conn-paste-backup\').style.display=\'none\'">Annuler</button>'
+            + '</div></div>';
+
+        pasteEl.innerHTML = html;
+        pasteEl.style.display = 'block';
+    });
+}
+
+async function wsSaveBackup() {
+    var dest = document.getElementById('backup-destination').value;
+    var bucket = document.getElementById('backup-bucket').value.trim();
+    var freq = document.getElementById('backup-frequency').value;
+    if (!dest) { toast('Choisis une destination', 'error'); return; }
+    await apiPost('projects/' + wsProjectId + '/connections', {
+        type: 'backup',
+        config: {destination: dest, bucket: bucket || undefined, frequency: freq || undefined}
+    });
+    toast('Backup configure');
+    document.getElementById('conn-paste-backup').style.display = 'none';
+    loadWsConnections();
+}
+
 function wsShowDns() {
     const pasteEl = document.getElementById('conn-paste-domain');
     if (!pasteEl) return;
@@ -3694,14 +4183,18 @@ async function wsConnPasteSave(type) {
     loadWsConnections();
 }
 
-// Edit an existing connection
+// Edit an existing connection — dispatch to the right guided form
 async function wsEditConnection(type) {
-    // Fetch current data
+    if (type === 'email') return wsSetupEmail();
+    if (type === 'domain') return wsSetupDomain();
+    if (type === 'deploy') return wsSetupDeploy();
+    if (type === 'database') return wsSetupDatabase();
+    if (type === 'storage') return wsSetupStorage();
+    if (type === 'backup') return wsSetupBackup();
+    // Fallback for unknown types
     const data = await api('projects/' + wsProjectId + '/connections');
     const conn = (data.connections || []).find(function(c) { return c.type === type; });
-    const existingConfig = conn ? (conn.details || {}) : {};
-
-    wsShowAddConnection(type, existingConfig);
+    wsShowAddConnection(type, conn ? (conn.details || {}) : {});
 }
 
 function wsShowAddConnection(preselect, prefill) {

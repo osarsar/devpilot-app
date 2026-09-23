@@ -736,7 +736,10 @@ def api_get_connections(pid):
                         "token": "actif" if account_has_token else "manquant"},
             "actions": [
                 {"label": "Regenerer le token", "url": token_url, "action_type": "regen_token"},
-            ] if token_url else [],
+                {"label": "Changer de compte", "action_type": "change_hosting_account"},
+            ] if token_url else [
+                {"label": "Changer de compte", "action_type": "change_hosting_account"},
+            ],
         })
     elif account_id:
         # Account linked but no site URL yet
@@ -938,7 +941,7 @@ def api_get_connections(pid):
             "type": "database", "label": DB_LABELS.get(db_type, db_type.title() if db_type else "Database"),
             "status": "connected", "url": db_cfg.get("url", db_urls.get(db_type, "")),
             "details": {"type": db_type, "host": db_host, "port": db_cfg.get("port", ""), "nom": db_cfg.get("name", "")},
-            "action": None,
+            "actions": [{"label": "Modifier", "action_type": "setup_database"}],
         })
     elif db_type:
         connections.append({
@@ -961,13 +964,13 @@ def api_get_connections(pid):
                 "bucket": bucket,
                 "objets": r2_stats.get("count", 0) if isinstance(r2_stats, dict) else 0,
                 "taille": r2_stats.get("total_size", 0) if isinstance(r2_stats, dict) else 0,
-            }, "action": None,
+            }, "actions": [{"label": "Modifier", "action_type": "setup_storage"}],
         })
     elif comps.get("storage") or wd.get("file_upload") == "yes":
         connections.append({
             "type": "storage", "label": "Stockage cloud", "status": "non_connecte", "url": "",
             "details": {},
-            "action": {"label": "Configurer R2", "url": "https://dash.cloudflare.com/", "action_type": "setup_r2"},
+            "action": {"label": "Configurer stockage", "action_type": "setup_storage"},
         })
 
     # ──── BACKUP ────
@@ -983,7 +986,7 @@ def api_get_connections(pid):
                 "url": f"https://dash.cloudflare.com/{r2_account}/r2/default/buckets/{backup_bucket}" if (r2_account and backup_bucket) else "",
                 "details": {"frequence": backup_freq, "bucket": backup_bucket,
                             "dernier": last_backup.get("started_at", "")},
-                "action": None,
+                "actions": [{"label": "Modifier", "action_type": "setup_backup"}],
             })
         else:
             connections.append({
@@ -993,15 +996,39 @@ def api_get_connections(pid):
             })
 
     # ──── SERVEUR ────
+    server_comp = comps.get("server")
+    server_cfg = _parse_cfg(server_comp)
+    server_ip = server_cfg.get("ip", "") or deploy_cfg.get("server_host", "")
+    server_provider = server_cfg.get("provider", "") or deploy_cfg.get("provider", "")
+    server_ssh = server_cfg.get("ssh_user", "")
+    server_dashboard = server_cfg.get("dashboard_url", "")
     backend_host = deploy_cfg.get("backend_hosting", "") or wd.get("backend_hosting", "")
-    server_host = deploy_cfg.get("server_host", "")
-    if backend_host == "vps" or server_host:
-        connections.append({
-            "type": "server", "label": "Serveur VPS",
-            "status": "connected" if server_host else "a_configurer",
-            "url": "", "details": {"adresse": server_host or "non configure", "provider": deploy_cfg.get("provider", "")},
-            "action": None if server_host else {"label": "Ajouter le serveur", "url": "", "action_type": "add_server"},
-        })
+
+    if server_comp or backend_host == "vps" or server_ip:
+        if server_ip:
+            connections.append({
+                "type": "server",
+                "label": f"Serveur ({server_provider})" if server_provider else "Serveur VPS",
+                "status": "connected",
+                "url": server_dashboard,
+                "details": {
+                    "IP": server_ip,
+                    "provider": server_provider,
+                    "SSH": f"{server_ssh}@{server_ip}" if server_ssh else "",
+                },
+                "actions": [
+                    {"label": "Dashboard", "url": server_dashboard, "action_type": "open_hosting"} if server_dashboard else None,
+                    {"label": "Modifier", "action_type": "setup_server"},
+                ],
+            })
+            connections[-1]["actions"] = [a for a in connections[-1]["actions"] if a]
+        else:
+            connections.append({
+                "type": "server", "label": "Serveur VPS",
+                "status": "non_connecte", "url": "",
+                "details": {},
+                "actions": [{"label": "Configurer le serveur", "action_type": "setup_server"}],
+            })
 
     # ──── DOCKER ────
     docker_cfg = _parse_cfg(comps.get("docker"))

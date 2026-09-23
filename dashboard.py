@@ -1639,6 +1639,15 @@ def _write_claude_md(project_path, project, specs):
             conn_lines.append("")
             has_connections = True
 
+        elif comp_key == "server" and cfg.get("ip"):
+            conn_lines.append("### Serveur")
+            conn_lines.append(f"- IP: {cfg['ip']}")
+            if cfg.get("provider"): conn_lines.append(f"- Provider: {cfg['provider']}")
+            if cfg.get("ssh_user"): conn_lines.append(f"- SSH: {cfg['ssh_user']}@{cfg['ip']}")
+            if cfg.get("dashboard_url"): conn_lines.append(f"- Dashboard: {cfg['dashboard_url']}")
+            conn_lines.append("")
+            has_connections = True
+
         elif comp_key == "backup" and (cfg.get("bucket") or cfg.get("destination")):
             conn_lines.append("### Backup")
             if cfg.get("destination"): conn_lines.append(f"- Destination: {cfg['destination']}")
