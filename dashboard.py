@@ -2654,7 +2654,6 @@ if __name__ == "__main__":
     import webbrowser, threading
     port = 5555
     print(f"\n  DevPilot -> http://localhost:{port}\n")
-    # Only open browser on first manual launch, not on restarts
-    if os.isatty(0):
-        threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+    # Open browser on launch (desktop shortcut or terminal)
+    threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{port}")).start()
     app.run(host="127.0.0.1", port=port, debug=False)
