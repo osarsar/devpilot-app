@@ -84,7 +84,8 @@ systemctl --user restart devpilot-watcher.service
 
 # Initialize database
 echo "  [6/6] Initialisation de la base de donnees..."
-cd "$APP_DIR" && python3 -c "import db; db.init_db(); print('  DB OK')"
+cd "$APP_DIR"
+PYTHONPATH="$APP_DIR" python3 -c "import db; db.init_db(); print('  DB OK')"
 
 # Desktop shortcut (uses launch.sh for clean port handling)
 chmod +x "$APP_DIR/launch.sh"
