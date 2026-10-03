@@ -289,6 +289,24 @@ def sync_project_to_github(project_id, message="", add_all=True):
         }
 
 
+def project_bucket(project_id):
+    """The bucket chosen for THIS project (backup, else storage component), so backup and restore agree."""
+    import json as _json
+    for key in ("backup", "storage"):
+        c = db.get_project_component(project_id, key)
+        if not c:
+            continue
+        cfg = c.get("config") or {}
+        if isinstance(cfg, str):
+            try:
+                cfg = _json.loads(cfg)
+            except ValueError:
+                cfg = {}
+        if cfg.get("bucket"):
+            return cfg["bucket"]
+    return ""
+
+
 def sync_project_to_r2(project_id, asset_type=None):
     """Upload project files to R2 based on asset rules."""
     project = db.get_project(project_id)
@@ -308,7 +326,7 @@ def sync_project_to_r2(project_id, asset_type=None):
     if not r2_rules:
         return {"success": False, "message": "Pas de regles R2 pour ce projet"}
 
-    bucket = r2_rules[0].get("r2_bucket") or db.get_setting("r2_default_bucket", "")
+    bucket = project_bucket(project_id) or r2_rules[0].get("r2_bucket") or db.get_setting("r2_default_bucket", "")
     if not bucket:
         return {"success": False, "message": "Pas de bucket R2 configure"}
 
@@ -382,7 +400,7 @@ def restore_from_r2(project_id, asset_type=None):
         return {"success": False, "message": "R2 non configure"}
 
     ppath = project["path"]
-    bucket = db.get_setting("r2_default_bucket", "")
+    bucket = project_bucket(project_id) or db.get_setting("r2_default_bucket", "")
     rules = db.get_asset_rules(project_id)
     r2_rules = [r for r in rules if r["storage_backend"] == "r2"]
 

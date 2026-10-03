@@ -23,15 +23,50 @@ from flask_sock import Sock
 import db
 import components as comp
 from cloud_routes import cloud_bp
+import projects as P
+import servers
+import ports as ports_mod
+import sizes
+import model as M
+import phases as PH
+from project_routes import projects_bp
 from docgen_routes import docgen_bp
 
 app = Flask(__name__)
 sock = Sock(app)
 app.register_blueprint(cloud_bp)
 app.register_blueprint(docgen_bp)
+app.register_blueprint(projects_bp)
+
+# Only this dashboard may call the API. Without this, any website open in the
+# browser could POST to localhost:5555 or open the terminal WebSocket
+# (cross-site requests, DNS rebinding): the API runs shell commands.
+ALLOWED_HOSTS = {"127.0.0.1:5555", "localhost:5555"}
+
+
+@app.after_request
+def _refresh_sizes_after_changes(resp):
+    p = request.path
+    if request.method != "GET" and resp.status_code < 400 and (
+            "clean" in p or "purge" in p or "/move" in p or "/duplicate" in p or "/adopt" in p
+            or "/clone" in p or (request.method == "DELETE" and p.startswith("/api/projects/"))):
+        sizes.invalidate_all()
+    return resp
+
+
+@app.before_request
+def _only_from_dashboard():
+    if request.host not in ALLOWED_HOSTS:
+        return jsonify({"error": "host refuse"}), 403
+    origin = request.headers.get("Origin")
+    if origin and origin.split("://", 1)[-1] not in ALLOWED_HOSTS:
+        return jsonify({"error": "origine refusee"}), 403
+    if request.headers.get("Sec-Fetch-Site") == "cross-site":
+        return jsonify({"error": "requete cross-site refusee"}), 403
 HOME = Path.home()
 DEVPILOT_ROOT = HOME / "devpilot"
 DEVPILOT_PROJECTS = DEVPILOT_ROOT / "projects"
+DEVPILOT_PROJECTS.mkdir(parents=True, exist_ok=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -44,6 +79,12 @@ def run(cmd, timeout=15):
         return r.stdout.strip()
     except Exception:
         return ""
+
+
+def fast_size(path):
+    """Display only: cached size (background du), 0 until the first computation ends."""
+    v = sizes.size(path)
+    return v if v is not None else 0
 
 
 def dir_size(path):
@@ -166,7 +207,7 @@ def api_system():
     swap = psutil.swap_memory()
     cpu = psutil.cpu_percent(interval=0.3)
     trash_path = HOME / ".local" / "share" / "Trash"
-    trash_size = dir_size(str(trash_path)) if trash_path.exists() else 0
+    trash_size = fast_size(str(trash_path)) if trash_path.exists() else 0
     stats = db.get_stats()
 
     return jsonify({
@@ -202,7 +243,7 @@ def api_home():
         try:
             if item.is_symlink():
                 continue
-            size = item.stat().st_size if item.is_file() else dir_size(str(item))
+            size = item.stat().st_size if item.is_file() else fast_size(str(item))
             if size < 5 * 1024 * 1024:
                 continue
             cat, label = categories.get(item.name, ("project" if not item.name.startswith(".") else "system", item.name))
@@ -406,7 +447,7 @@ def api_downloads():
         try:
             if item.is_symlink():
                 continue
-            size = item.stat().st_size if item.is_file() else dir_size(str(item))
+            size = item.stat().st_size if item.is_file() else fast_size(str(item))
             mtime = datetime.fromtimestamp(item.stat().st_mtime).strftime("%Y-%m-%d")
             res = db.get_resource_by_path(str(item))
             files.append({
@@ -528,14 +569,14 @@ def api_caches_browser():
         full_path = HOME / info["full"]
         if not full_path.exists():
             continue
-        total = dir_size(str(full_path))
+        total = fast_size(str(full_path))
         if total < 1024 * 1024:
             continue
         subs = []
         for label, rp in info["paths"]:
             p = HOME / rp
             if p.exists():
-                s = dir_size(str(p))
+                s = fast_size(str(p))
                 if s > 0:
                     subs.append({"label": label, "path": str(p), "size": s, "size_h": fmt(s)})
         browsers.append({
@@ -549,6 +590,12 @@ def api_caches_browser():
 
 @app.route("/api/caches/projects")
 def api_caches_projects():
+    """Walks the scan dirs (e.g. ~/Desktop, 12 GB): last result now, refreshed in the background."""
+    value, _ = sizes.cached_call("caches/projects", _scan_project_caches)
+    return jsonify(value or [])
+
+
+def _scan_project_caches():
     scan_dirs_setting = db.get_setting("scan_dirs", "~/Desktop")
     base_dirs = []
     for d in scan_dirs_setting.split(","):
@@ -587,7 +634,7 @@ def api_caches_projects():
                         cp = pdir / cn
                         if cp.exists() and cp.is_dir() and not cp.is_symlink():
                             try:
-                                s = dir_size(str(cp))
+                                s = fast_size(str(cp))
                                 if s < 1024:
                                     continue
                                 total += s
@@ -598,7 +645,7 @@ def api_caches_projects():
                     nmc = pdir / "node_modules" / ".cache"
                     if nmc.exists():
                         try:
-                            s = dir_size(str(nmc))
+                            s = fast_size(str(nmc))
                             if s > 1024:
                                 caches.append({"name": "node_modules/.cache", "path": str(nmc), "size": s,
                                                "size_h": fmt(s), "label": "Build cache", "tech": "node",
@@ -619,7 +666,7 @@ def api_caches_projects():
                 pass
 
     results.sort(key=lambda x: x["total"], reverse=True)
-    return jsonify(results)
+    return results
 
 
 @app.route("/api/caches/global")
@@ -629,7 +676,7 @@ def api_caches_global():
         p = HOME / g["path"]
         if not p.exists():
             continue
-        s = dir_size(str(p))
+        s = fast_size(str(p))
         if s < 1024 * 1024:
             continue
         results.append({
@@ -665,7 +712,7 @@ def api_caches_system():
     for item in cache_dir.iterdir():
         if item.is_dir() and not item.is_symlink():
             try:
-                s = dir_size(str(item))
+                s = fast_size(str(item))
                 if s < 10 * 1024 * 1024:
                     continue
                 cl = "safe" if item.name in safe else ("partial" if item.name in partial else "unknown")
@@ -687,7 +734,7 @@ def api_suggestions():
     # Trash
     trash = HOME / ".local" / "share" / "Trash"
     if trash.exists():
-        s = dir_size(str(trash))
+        s = fast_size(str(trash))
         if s > 100 * 1024 * 1024:
             sug.append({"priority": "critical", "msg": f"Corbeille = {fmt(s)}", "action": "trash", "size": s})
 
@@ -722,14 +769,14 @@ def api_suggestions():
     # Downloads
     dl = HOME / "Downloads"
     if dl.exists():
-        s = dir_size(str(dl))
+        s = fast_size(str(dl))
         if s > 2 * 1024 * 1024 * 1024:
             sug.append({"priority": "medium", "msg": f"Downloads = {fmt(s)}", "action": "nav:storage", "size": s})
 
     # pip cache
     pip_cache = HOME / ".cache" / "pip"
     if pip_cache.exists():
-        s = dir_size(str(pip_cache))
+        s = fast_size(str(pip_cache))
         if s > 500 * 1024 * 1024:
             sug.append({"priority": "low", "msg": f"Cache pip = {fmt(s)}", "action": "pip_cache", "size": s})
 
@@ -743,13 +790,31 @@ def api_suggestions():
 @app.route("/api/projects")
 def api_projects():
     projects = db.get_projects()
-    # Only show projects with a valid path
-    projects = [p for p in projects if p.get("path")]
+    try:
+        _listen = ports_mod.listening()
+    except Exception:
+        _listen = []
     for p in projects:
+        p["state"] = P.state(p)                  # ok | missing | no_path
+        p["managed"] = bool(p.get("path")) and P.is_managed(p["path"])
+        try:                                     # type + needs summary (no network: fast)
+            st = M.connections_status(p["id"], probe=False)
+            p["needs"] = {"profile": st["profile"], "label": st["label"], "done": st["done"], "total": st["total"],
+                          "items": [{"need": x["need"], "label": x["label"], "state": x["state"]} for x in st["needs"]],
+                          "controller": bool(st["controller"])}
+        except Exception:
+            p["needs"] = None
+        p["phase"] = PH.summary(p["id"])         # current phase + next step (never raises)
+        try:                                      # ports held by processes running from the folder (one scan)
+            root = P.resolve(p["path"]) if p.get("path") and os.path.isdir(p["path"]) else None
+            p["running_ports"] = sorted({l["port"] for l in _listen if root and l["cwd"] and ports_mod._inside(l["cwd"], root)}) if root else []
+        except Exception:
+            p["running_ports"] = []
         # Real disk size of the project folder
         if p.get("path") and os.path.isdir(p["path"]):
-            p["disk_size"] = dir_size(p["path"])
-            p["disk_size_h"] = fmt(p["disk_size"])
+            size = sizes.size(p["path"])           # cached, computed in the background
+            p["disk_size"] = size or 0
+            p["disk_size_h"] = sizes.fmt_or_pending(size, fmt)
         else:
             p["disk_size"] = 0
             p["disk_size_h"] = "—"
@@ -761,189 +826,6 @@ def api_projects():
     return jsonify(projects)
 
 
-@app.route("/api/projects", methods=["POST"])
-def api_create_project():
-    data = request.json
-    path = data.get("path", "").strip()
-    if path:
-        path = os.path.expanduser(path)
-    else:
-        # Default: ~/devpilot/projects/name
-        path = str(DEVPILOT_PROJECTS / data["name"])
-
-    # Create the folder if it doesn't exist
-    Path(path).mkdir(parents=True, exist_ok=True)
-
-    try:
-        pid = db.create_project(
-            name=data["name"], color=data.get("color", "#6366f1"),
-            icon=data.get("icon", ""), description=data.get("description", ""),
-            path=path,
-        )
-        pat = data.get("pattern", "").strip()
-        if pat:
-            db.add_rule(pattern=pat, project_id=pid, resource_type="any")
-        return jsonify({"success": True, "id": pid, "path": path})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/projects/clone", methods=["POST"])
-def api_clone_project():
-    """Clone a git repo and auto-register as project."""
-    url = request.json.get("url", "").strip()
-    target_dir = request.json.get("target_dir", "").strip() or str(DEVPILOT_PROJECTS)
-    target_dir = os.path.expanduser(target_dir)
-
-    if not url:
-        return jsonify({"success": False, "message": "URL requise"})
-
-    # Extract project name from URL
-    name = url.rstrip("/").split("/")[-1].replace(".git", "")
-    clone_path = os.path.join(target_dir, name)
-
-    if os.path.exists(clone_path):
-        return jsonify({"success": False, "message": f"Le dossier {name} existe deja dans {target_dir}"})
-
-    # Run git clone
-    result = run(f"git clone '{url}' '{clone_path}' 2>&1", timeout=120)
-
-    if not os.path.exists(clone_path):
-        return jsonify({"success": False, "message": f"Clone echoue:\n{result}", "output": result})
-
-    # Detect tech color
-    tech_colors = {
-        "package.json": "#fbbf24", "pubspec.yaml": "#38bdf8",
-        "requirements.txt": "#34d399", "pyproject.toml": "#34d399",
-        "build.gradle": "#06b6d4", "Cargo.toml": "#fb923c",
-        "go.mod": "#60a5fa",
-    }
-    color = "#8b5cf6"
-    for mf, c in tech_colors.items():
-        if (Path(clone_path) / mf).exists():
-            color = c
-            break
-
-    # Create project in DB
-    try:
-        pid = db.create_project(
-            name=name, color=color,
-            description=f"Clone de {url}",
-            path=clone_path, git_remote=url,
-        )
-        import re as _re
-        db.add_rule(pattern=_re.escape(name.lower()), project_id=pid, resource_type="any")
-    except Exception as e:
-        return jsonify({"success": True, "message": f"Clone OK mais erreur DB: {e}", "path": clone_path, "output": result})
-
-    return jsonify({
-        "success": True,
-        "message": f"{name} clone et enregistre",
-        "path": clone_path,
-        "project_id": pid,
-        "output": result,
-    })
-
-
-@app.route("/api/projects/from-path", methods=["POST"])
-def api_create_from_path():
-    """Create a project from an existing or new folder path."""
-    raw_path = request.json.get("path", "").strip()
-    if not raw_path:
-        return jsonify({"success": False, "message": "Chemin requis"})
-
-    full_path = os.path.expanduser(raw_path)
-    name = os.path.basename(full_path)
-
-    if not name:
-        return jsonify({"success": False, "message": "Nom de dossier invalide"})
-
-    # Check if project already exists
-    existing = db.get_projects()
-    for p in existing:
-        if p["name"].lower() == name.lower():
-            return jsonify({"success": False, "message": f'Le projet "{name}" existe deja'})
-
-    # Create folder if it doesn't exist
-    Path(full_path).mkdir(parents=True, exist_ok=True)
-
-    # Detect color from manifest
-    tech_colors = {
-        "package.json": "#fbbf24", "pubspec.yaml": "#38bdf8",
-        "requirements.txt": "#34d399", "pyproject.toml": "#34d399",
-        "build.gradle": "#06b6d4", "Cargo.toml": "#fb923c",
-        "go.mod": "#60a5fa",
-    }
-    color = "#8b5cf6"
-    for mf, c in tech_colors.items():
-        if (Path(full_path) / mf).exists():
-            color = c
-            break
-
-    # Detect git remote
-    git_remote = ""
-    git_dir = Path(full_path) / ".git"
-    if git_dir.exists():
-        git_remote = run(f"git -C '{full_path}' remote get-url origin 2>/dev/null")
-
-    pid = db.create_project(
-        name=name, color=color, path=full_path,
-        git_remote=git_remote,
-        description=f"Git: {git_remote}" if git_remote else "",
-    )
-
-    import re as _re
-    db.add_rule(pattern=_re.escape(name.lower()), project_id=pid, resource_type="any")
-
-    return jsonify({"success": True, "id": pid, "name": name, "path": full_path})
-
-
-@app.route("/api/projects/<int:pid>", methods=["PUT"])
-def api_update_project(pid):
-    data = request.json
-    mode = data.pop("path_mode", "move")
-
-    if "path" in data and data["path"]:
-        new_path = os.path.expanduser(data["path"].strip())
-        project = db.get_project(pid)
-        old_path = project.get("path", "") if project else ""
-
-        if old_path and os.path.isdir(old_path) and old_path != new_path:
-            Path(new_path).parent.mkdir(parents=True, exist_ok=True)
-            try:
-                if mode == "move":
-                    shutil.move(old_path, new_path)
-                elif mode == "copy":
-                    shutil.copytree(old_path, new_path)
-            except Exception as e:
-                return jsonify({"success": False, "message": f"Erreur: {e}"})
-        elif not old_path or not os.path.isdir(old_path):
-            Path(new_path).mkdir(parents=True, exist_ok=True)
-
-        data["path"] = new_path
-        # Project name always matches folder name
-        data["name"] = os.path.basename(new_path)
-
-    db.update_project(pid, **data)
-    return jsonify({"success": True})
-
-
-@app.route("/api/projects/<int:pid>", methods=["DELETE"])
-def api_delete_project(pid):
-    project = db.get_project(pid)
-    if project and project.get("path"):
-        ppath = Path(project["path"])
-        if ppath.exists() and ppath.is_dir():
-            try:
-                shutil.rmtree(str(ppath))
-            except (PermissionError, OSError):
-                # Try with sudo for root-owned files
-                run(f"rm -rf '{ppath}'", timeout=30)
-    db.delete_project(pid)
-    db.log_event("deleted", "project", project["name"] if project else "", project.get("path", "") if project else "", 0)
-    return jsonify({"success": True})
-
-
 @app.route("/api/projects/<int:pid>/resources")
 def api_project_resources(pid):
     resources = db.get_resources(project_id=pid)
@@ -952,30 +834,49 @@ def api_project_resources(pid):
     return jsonify(resources)
 
 
+def _docker_rm(kind, name):
+    """Remove a docker container/image/volume by name — argument list, no shell."""
+    if not name or name.startswith("-"):
+        raise ValueError(f"nom invalide : {name!r}")
+    cmd = {"container": ["docker", "rm", "-f", name], "image": ["docker", "rmi", "-f", name],
+           "volume": ["docker", "volume", "rm", "-f", name]}[kind]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        raise RuntimeError(r.stderr.strip()[:200])
+
+
+def _trash_resource_file(path, project):
+    """A tracked file (download, asset...) of this project → trash. Only paths
+    DevPilot knows about: inside the project folder or recorded as its resource."""
+    p = P.resolve(path)
+    inside = project.get("path") and p != P.resolve(project["path"]) and p.is_relative_to(P.resolve(project["path"]))
+    res = db.get_resource_by_path(path)
+    if not inside and not (res and res.get("project_id") == project["id"]):
+        raise P.ProjectError(f"{path} n'appartient pas a ce projet")
+    if p == P.HOME or not p.is_relative_to(P.HOME):
+        raise P.ProjectError(f"{path} : refuse")
+    size = p.stat().st_size if p.is_file() else fast_size(str(p))
+    P.move_to_trash(p)
+    return size
+
+
 @app.route("/api/projects/<int:pid>/clean", methods=["POST"])
 def api_clean_project(pid):
-    resources = db.get_resources(project_id=pid)
+    project = P.get(pid)
     cleaned, errors = [], []
-    for r in resources:
+    for r in db.get_resources(project_id=pid):
         try:
             if r["type"] in ("file", "directory"):
-                p = Path(r["path"])
-                if p.exists():
-                    shutil.rmtree(str(p)) if p.is_dir() else p.unlink()
+                if Path(r["path"]).exists():
+                    _trash_resource_file(r["path"], project)
                     cleaned.append(r["name"])
-            elif r["type"] == "docker_container":
-                run(f"docker rm -f {r['name']}", timeout=30)
-                cleaned.append(f"container:{r['name']}")
-            elif r["type"] == "docker_image":
-                run(f"docker rmi -f {r['name']}", timeout=30)
-                cleaned.append(f"image:{r['name']}")
-            elif r["type"] == "docker_volume":
-                run(f"docker volume rm -f {r['name']}", timeout=30)
-                cleaned.append(f"volume:{r['name']}")
+            elif r["type"] in ("docker_container", "docker_image", "docker_volume"):
+                _docker_rm(r["type"].split("_", 1)[1], r["name"])
+                cleaned.append(f"{r['type'].split('_', 1)[1]}:{r['name']}")
             db.update_resource(r["id"], status="deleted")
             db.log_event("cleaned", r["type"], r["name"], r.get("path", ""), r.get("size", 0), pid)
         except Exception as e:
-            errors.append(f"{r['name']}: {e}")
+            errors.append(f"{r['name']}: {getattr(e, 'message', e)}")
     return jsonify({"success": True, "cleaned": cleaned, "errors": errors})
 
 
@@ -1056,14 +957,16 @@ def api_get_specs(pid):
 
 @app.route("/api/projects/<int:pid>/specs", methods=["POST"])
 def api_save_specs(pid):
-    data = request.json
+    data = request.get_json(silent=True) or {}
     db.save_project_specs(pid, data.get("wizard_data", {}), data.get("checklist", []), data.get("prompt", ""))
+    P.write_space(pid)                    # prompt.md / checklist.json in the project folder
     return jsonify({"success": True})
 
 
 @app.route("/api/projects/<int:pid>/checklist", methods=["POST"])
 def api_update_checklist(pid):
-    db.update_checklist(pid, request.json.get("checklist", []))
+    db.update_checklist(pid, (request.get_json(silent=True) or {}).get("checklist", []))
+    P.write_space(pid)
     return jsonify({"success": True})
 
 
@@ -1076,8 +979,11 @@ def api_project_status(pid):
 
     ppath = project.get("path", "")
 
-    # Git info
+    # Git info (the folder itself) + every repo it contains
     git = _get_git_info(ppath)
+    repos = P.find_repos(ppath) if ppath and os.path.isdir(ppath) else []
+    for r in repos:
+        r["state"] = P.git_state(r["path"])
 
     # Resources
     resources = db.get_resources(project_id=pid)
@@ -1104,8 +1010,14 @@ def api_project_status(pid):
     # Disk usage of project dir
     disk_total = 0
     if ppath and Path(ppath).exists():
-        disk_total = dir_size(ppath)
+        disk_total = sizes.size(ppath)
 
+    # The project's own console (controller.py): declared or auto-detected, with its live status
+    try:
+        import controller as _CT
+        ctrl = _CT.get(pid)
+    except Exception:
+        ctrl = None
     # Detect if project has its own console (run.sh or server.py)
     has_console = False
     if ppath and Path(ppath).is_dir():
@@ -1114,15 +1026,19 @@ def api_project_status(pid):
     return jsonify({
         "project": {**project, "total_size_h": fmt(project.get("total_size", 0) or 0)},
         "git": git,
+        "repos": repos,
+        "github_org": (P.read_manifest(ppath).get("github") or {}).get("org") if ppath and os.path.isdir(ppath) else None,
+        "state": P.state(project),
         "resources": resources,
         "ports": ports,
         "caches": caches,
         "total_cache": total_cache,
         "total_cache_h": fmt(total_cache),
         "docker": docker,
-        "disk_total": disk_total,
-        "disk_total_h": fmt(disk_total),
-        "has_console": has_console,
+        "disk_total": disk_total or 0,
+        "disk_total_h": sizes.fmt_or_pending(disk_total, fmt),
+        "has_console": has_console or bool(ctrl),
+        "controller": ctrl,
     })
 
 
@@ -1178,15 +1094,6 @@ def api_cleanup_preview(pid):
             "safe": True, "detail": p.get("process_name", ""),
         })
 
-    # Project directory itself
-    if ppath and Path(ppath).exists():
-        proj_size = dir_size(ppath)
-        items.append({
-            "category": "project_dir", "name": f"Dossier {project['name']}",
-            "path": ppath, "size": proj_size, "size_h": fmt(proj_size),
-            "safe": False, "detail": "Tout le dossier projet",
-        })
-
     return jsonify({
         "project": project,
         "items": items,
@@ -1197,35 +1104,31 @@ def api_cleanup_preview(pid):
 
 @app.route("/api/projects/<int:pid>/cleanup", methods=["POST"])
 def api_selective_cleanup(pid):
-    """Selective cleanup: accepts a list of items to clean."""
-    data = request.json
-    items = data.get("items", [])
-    delete_project_dir = data.get("delete_project_dir", False)
-    set_done = data.get("set_done", False)
+    """Selective cleanup of what the preview listed. Caches are deleted only
+    inside the project folder, files go to the trash. The project folder
+    itself is never deleted here: that is DELETE /api/projects/<id>."""
+    project = P.get(pid)
+    data = request.get_json(silent=True) or {}
+    if data.get("delete_project_dir"):
+        return jsonify({"success": False, "message":
+                        "Pour supprimer le dossier du projet, utilise « Supprimer » (inspection + corbeille)."}), 409
+    root = project.get("path", "")
+    cleaned, errors = [], []
 
-    cleaned = []
-    errors = []
-
-    for item in items:
-        cat = item.get("category", "")
-        path = item.get("path", "")
-        name = item.get("name", "")
-
+    for item in data.get("items", []):
+        cat, path, name = item.get("category", ""), item.get("path", ""), item.get("name", "")
         try:
             if cat == "cache" and path and os.path.isdir(path):
+                if not root:
+                    raise P.ProjectError("projet sans dossier")
                 s = dir_size(path)
-                shutil.rmtree(path, ignore_errors=True)
+                P.safe_rmtree(path, root)
                 cleaned.append(f"Cache {name}: {fmt(s)}")
                 db.log_event("cleaned", "cache", name, path, s, pid)
 
             elif cat == "docker":
                 detail = item.get("detail", "")
-                if detail == "container":
-                    run(f"docker rm -f {name}", timeout=30)
-                elif detail == "image":
-                    run(f"docker rmi -f {name}", timeout=30)
-                elif detail == "volume":
-                    run(f"docker volume rm -f {name}", timeout=30)
+                _docker_rm(detail, name)
                 res = db.get_resource_by_path(path)
                 if res:
                     db.update_resource(res["id"], status="deleted")
@@ -1233,38 +1136,21 @@ def api_selective_cleanup(pid):
                 db.log_event("cleaned", f"docker_{detail}", name, "", 0, pid)
 
             elif cat == "file" and path:
-                p = Path(path)
-                if p.exists():
-                    s = p.stat().st_size if p.is_file() else dir_size(str(p))
-                    shutil.rmtree(str(p)) if p.is_dir() else p.unlink()
-                    cleaned.append(f"{name}: {fmt(s)}")
+                if Path(path).exists():
+                    s = _trash_resource_file(path, project)
+                    cleaned.append(f"{name}: {fmt(s)} (corbeille)")
                 res = db.get_resource_by_path(path)
                 if res:
                     db.update_resource(res["id"], status="deleted")
                 db.log_event("cleaned", "file", name, path, 0, pid)
 
             elif cat == "port":
-                # Can't close ports, just note it
                 cleaned.append(f"Port {name} (le process doit etre arrete)")
 
         except Exception as e:
-            errors.append(f"{name}: {e}")
+            errors.append(f"{name}: {getattr(e, 'message', e)}")
 
-    # Delete entire project directory
-    if delete_project_dir:
-        project = db.get_project(pid)
-        ppath = project.get("path", "") if project else ""
-        if ppath and Path(ppath).exists():
-            try:
-                s = dir_size(ppath)
-                shutil.rmtree(ppath)
-                cleaned.append(f"Dossier projet: {fmt(s)}")
-                db.log_event("cleaned", "project_dir", project["name"], ppath, s, pid)
-            except Exception as e:
-                errors.append(f"Dossier: {e}")
-
-    # Set project status
-    if set_done:
+    if data.get("set_done"):
         db.set_project_status(pid, "done")
 
     return jsonify({
@@ -1303,7 +1189,9 @@ def api_open_terminal(pid):
     except FileNotFoundError:
         # Fallback to x-terminal-emulator
         try:
-            fallback = ["x-terminal-emulator", "-e", f"cd '{ppath}' && {'claude; exec bash' if mode == 'claude' else 'bash'}"]
+            import shlex
+            fallback = ["x-terminal-emulator", "-e",
+                        f"cd {shlex.quote(ppath)} && {'claude; exec bash' if mode == 'claude' else 'bash'}"]
             subprocess.Popen(fallback, start_new_session=True)
             return jsonify({"success": True, "mode": mode, "path": ppath})
         except Exception as e:
@@ -1449,6 +1337,7 @@ def api_project_lifecycle(pid):
     if status not in ("active", "paused", "done"):
         return jsonify({"success": False, "message": "Status invalide"})
     db.set_project_status(pid, status)
+    P.write_space(pid)
     db.log_event("lifecycle", "project", db.get_project(pid)["name"], "", 0, pid, details=f"Status: {status}")
     return jsonify({"success": True})
 
@@ -1515,7 +1404,7 @@ def _write_claude_md(project_path, project, specs):
     dp = _ensure_devpilot_dir(project_path)
     wd = specs.get("wizard_data", {}) if specs else {}
 
-    lines = [f"# {project['name']} — DevPilot Context\n"]
+    lines = [P.DEVPILOT_MARK, f"# {project['name']} — DevPilot Context\n"]
     if wd.get("client_name"):
         lines.append(f"Client: {wd['client_name']}")
     if wd.get("site_type"):
@@ -1639,6 +1528,19 @@ def _write_claude_md(project_path, project, specs):
             conn_lines.append("")
             has_connections = True
 
+        elif comp_key == "server" and cfg.get("servers"):
+            conn_lines.append("### Serveurs")
+            for sv in cfg["servers"]:
+                where = f"{sv.get('user')}@{sv.get('host')}" + (f":{sv['port']}" if sv.get("port") not in (22, None) else "")
+                line = f"- {sv.get('name')} ({sv.get('role')}) : ssh {where}"
+                if sv.get("remote_path"):
+                    line += f", dossier {sv['remote_path']}"
+                if sv.get("urls"):
+                    line += ", " + " ".join(sv["urls"])
+                conn_lines.append(line)
+            conn_lines.append("")
+            has_connections = True
+
         elif comp_key == "server" and cfg.get("ip"):
             conn_lines.append("### Serveur")
             conn_lines.append(f"- IP: {cfg['ip']}")
@@ -1681,8 +1583,14 @@ def _write_claude_md(project_path, project, specs):
 
     (dp / "CLAUDE.md").write_text("\n".join(lines), encoding="utf-8")
 
-    # Also put CLAUDE.md at project root for easy access
-    (Path(project_path) / "CLAUDE.md").write_text("\n".join(lines), encoding="utf-8")
+    # Root CLAUDE.md for easy access — only if absent or written by DevPilot:
+    # the repo's own CLAUDE.md is never overwritten
+    root_md = Path(project_path) / "CLAUDE.md"
+    if not root_md.exists() or P.is_devpilot_file(root_md):
+        root_md.write_text("\n".join(lines), encoding="utf-8")
+        P.exclude_from_git(project_path, (".devpilot/", "/CLAUDE.md"))
+    else:
+        P.exclude_from_git(project_path, (".devpilot/",))
 
 
 @app.route("/api/projects/<int:pid>/init-devpilot", methods=["POST"])
@@ -1697,7 +1605,8 @@ def api_init_devpilot(pid):
         return jsonify({"success": False, "message": "Le projet n'a pas de dossier. Lie-le a Git d'abord."})
 
     specs = db.get_project_specs(pid)
-    dp = _ensure_devpilot_dir(ppath)
+    dp = P.init_space(ppath, project["name"])     # projects registered before .devpilot/ existed
+    P.write_space(pid)
 
     # Save prompt.md
     if specs and specs.get("prompt"):
@@ -1910,140 +1819,266 @@ def api_stop_project():
 # TERMINAL
 # ═══════════════════════════════════════════════════════════════════════════
 
-@app.route("/api/projects/<int:pid>/link-git", methods=["POST"])
-def api_link_git(pid):
-    """Link a project to a git repo — init or clone."""
-    project = db.get_project(pid)
-    if not project:
-        return jsonify({"success": False, "message": "Projet introuvable"})
+# ── Terminal sessions (PTY) ─────────────────────────────────────────────────
+# A session outlives its WebSocket when opened with a session id (sid): closing
+# the tab or changing page only detaches, so a long interactive script
+# (e.g. reconstruct.sh) keeps running and the terminal can be reattached later.
 
-    url = request.json.get("url", "").strip()
-    if not url:
-        return jsonify({"success": False, "message": "URL requise"})
+IMPORT_RC = Path(__file__).resolve().parent / "import_rc.sh"
+TERM_BUFFER_MAX = 256 * 1024
+_term_sessions = {}
+_term_lock = threading.Lock()
 
-    ppath = project.get("path", "")
 
-    # Case 1: Project has a path and it already exists
-    if ppath and os.path.isdir(ppath):
-        git_dir = Path(ppath) / ".git"
-        if git_dir.exists():
-            # Already a git repo — just update/add remote
-            existing_remote = run(f"git -C '{ppath}' remote get-url origin 2>/dev/null")
-            if existing_remote:
-                run(f"git -C '{ppath}' remote set-url origin '{url}'")
-                msg = f"Remote origin mis a jour: {url}"
-            else:
-                run(f"git -C '{ppath}' remote add origin '{url}'")
-                msg = f"Remote origin ajoute: {url}"
+class TermSession:
+    def __init__(self, sid, cwd, mode, argv=None):
+        self.sid, self.cwd, self.mode = sid, cwd, mode
+        self.buffer = bytearray()
+        self.clients = set()
+        self.lock = threading.Lock()
+        self.alive = True
+        self.created = time.time()
+
+        env = os.environ.copy()
+        env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
+        if mode in ("import", "link"):
+            # rcfile: MD_ROOT (etc.) follow the current dir, `git clone <url> .` works in a project folder
+            env["DEVPILOT_FOLLOW_CWD"] = db.get_setting("import_cwd_vars", "MD_ROOT")
+            if mode == "link":
+                env["DEVPILOT_TERM_TITLE"] = ("Lier a GitHub : clone ici (git clone <lien> .) ou lance ton script, "
+                                              "puis clique Termine")
+            argv = ["bash", "--rcfile", str(IMPORT_RC), "-i"]
+        elif mode == "ssh" and argv:
+            pass                                   # ssh to a project's server (servers.terminal_argv)
         else:
-            # Directory exists but no git — init and add remote
-            run(f"git -C '{ppath}' init")
-            run(f"git -C '{ppath}' remote add origin '{url}'")
-            msg = f"Git initialise + remote ajoute: {url}"
-    # Case 2: Project has no path or path doesn't exist — clone
-    else:
-        name = project["name"]
-        clone_dir = str(DEVPILOT_PROJECTS)
-        clone_path = os.path.join(clone_dir, name)
+            argv = ["bash", "--login"]
 
-        if os.path.exists(clone_path):
-            return jsonify({"success": False, "message": f"Le dossier {clone_path} existe deja"})
+        self.pid, self.fd = pty.fork()
+        if self.pid == 0:
+            # Child: never fall back into the Flask code, whatever happens
+            try:
+                os.chdir(cwd)
+                # never let the shell inherit DevPilot's sockets (port 5555...): they would
+                # outlive DevPilot and keep the port busy
+                os.closerange(3, os.sysconf("SC_OPEN_MAX") if hasattr(os, "sysconf") else 4096)
+                os.execvpe(argv[0], argv, env)
+            finally:
+                os._exit(1)
 
-        result = run(f"git clone '{url}' '{clone_path}' 2>&1", timeout=120)
-        if not os.path.exists(clone_path):
-            return jsonify({"success": False, "message": f"Clone echoue:\n{result}", "output": result})
+        self.resize(40, 120)
+        threading.Thread(target=self._read_loop, daemon=True).start()
 
-        ppath = clone_path
-        msg = f"Repo clone dans {clone_path}"
+    def resize(self, rows, cols):
+        try:
+            fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+            os.kill(self.pid, signal.SIGWINCH)
+        except Exception:
+            pass
 
-    # Update project in DB
-    db.update_project(pid, path=ppath, git_remote=url)
-    db.invalidate_project_cache()
+    def _read_loop(self):
+        while True:
+            try:
+                data = os.read(self.fd, 16384)
+            except OSError:
+                break
+            if not data:
+                break
+            with self.lock:
+                self.buffer += data
+                if len(self.buffer) > TERM_BUFFER_MAX:
+                    del self.buffer[:len(self.buffer) - TERM_BUFFER_MAX]
+                clients = list(self.clients)
+            text = data.decode("utf-8", errors="replace")
+            for ws in clients:
+                try:
+                    ws.send(text)
+                except Exception:
+                    self.detach(ws)
+        self.alive = False
+        self._reap()
+        for ws in list(self.clients):
+            try:
+                ws.send("\r\n\x1b[2m[processus termine]\x1b[0m\r\n")
+                ws.close()
+            except Exception:
+                pass
+        with _term_lock:
+            if _term_sessions.get(self.sid) is self:
+                del _term_sessions[self.sid]
 
-    return jsonify({"success": True, "message": msg, "path": ppath})
+    def attach(self, ws):
+        with self.lock:
+            self.clients.add(ws)
+            backlog = bytes(self.buffer)
+        if backlog:
+            ws.send(backlog.decode("utf-8", errors="replace"))
+
+    def detach(self, ws):
+        with self.lock:
+            self.clients.discard(ws)
+
+    def write(self, data):
+        os.write(self.fd, data)
+
+    def _reap(self):
+        # Runs in the reader thread once the PTY is closed: blocking is fine
+        try:
+            os.waitpid(self.pid, 0)
+        except ChildProcessError:
+            pass
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+
+    def kill(self):
+        # First what the shell started (a dev server keeps its own process group:
+        # SIGHUP to bash would not reach it), then bash itself.
+        try:
+            for child in psutil.Process(self.pid).children(recursive=True):
+                ports_mod.kill_tree(child.pid, grace=3)
+        except Exception:
+            pass
+        # bash ignores SIGTERM when interactive: SIGHUP (like closing a
+        # terminal window), then SIGKILL if it is still there.
+        for sig in (signal.SIGHUP, signal.SIGKILL):
+            try:
+                os.killpg(os.getpgid(self.pid), sig)
+            except (ProcessLookupError, PermissionError, OSError):
+                break
+            for _ in range(10):
+                try:
+                    if os.waitpid(self.pid, os.WNOHANG)[0]:
+                        return
+                except ChildProcessError:
+                    return
+                time.sleep(0.05)
+
+
+def _project_sessions(project):
+    """Terminal sessions belonging to a project (by id, import name or folder)."""
+    root = P.resolve(project["path"]) if project.get("path") else None
+    with _term_lock:
+        return [s for s in _term_sessions.values()
+                if s.sid in (f"proj-{project['id']}", f"import-{project['name']}")
+                or (root and P.resolve(s.cwd).is_relative_to(root))]
+
+
+def _close_project_sessions(project):
+    sessions = _project_sessions(project)
+    for s in sessions:
+        with _term_lock:
+            _term_sessions.pop(s.sid, None)
+        s.kill()
+    return len(sessions)
+
+
+# ports.py sees the project's terminals (bash pids) and can close them
+ports_mod.session_pids = lambda project: [s.pid for s in _project_sessions(project) if s.alive]
+ports_mod.close_sessions = _close_project_sessions
+
+
+def _stop_everything_on_exit(*_):
+    """DevPilot stops: consoles it started and all terminals stop with it (setting stop_on_exit)."""
+    try:
+        if db.get_setting("stop_on_exit", "1") != "1":
+            return
+        ports_mod.close_all(db.get_projects())
+    except Exception:
+        pass
+
+
+import atexit
+atexit.register(_stop_everything_on_exit)
+for _sig in (signal.SIGTERM, signal.SIGINT):
+    try:
+        signal.signal(_sig, lambda *_: (_stop_everything_on_exit(), os._exit(0)))
+    except (ValueError, OSError):
+        pass
+
+
+# DevPilot's own idle shells don't block a move/delete (what runs in them does)
+P.ignored_pids.append(lambda: [s.pid for s in list(_term_sessions.values())])
+P.on_removed.append(_close_project_sessions)
 
 
 @sock.route("/api/terminal/ws")
 def terminal_ws(ws):
-    """Real terminal via WebSocket + PTY."""
-    cwd = request.args.get("cwd", str(DEVPILOT_PROJECTS))
+    """Real terminal via WebSocket + PTY.
+
+    ?sid=<id>   persistent session: reattached if it exists, kept alive when
+                the socket closes. Without sid the shell dies with the socket.
+    ?mode=import  bash with import_rc.sh (env vars follow the current dir).
+    """
+    sid = request.args.get("sid", "").strip()
+    mode = request.args.get("mode", "")
+    cwd = os.path.expanduser(request.args.get("cwd", "") or str(DEVPILOT_PROJECTS))
     if not os.path.isdir(cwd):
         cwd = str(DEVPILOT_PROJECTS)
 
-    child_pid, fd = pty.fork()
-
-    if child_pid == 0:
-        os.chdir(cwd)
-        env = os.environ.copy()
-        env["TERM"] = "xterm-256color"
-        env["COLORTERM"] = "truecolor"
-        os.execvpe("bash", ["bash", "--login"], env)
-    else:
+    argv = None
+    if mode == "ssh":
+        # the command comes from the stored server config, never from the request
         try:
-            fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
-        except Exception:
-            pass
+            pid, server_id = int(request.args.get("project", 0)), request.args.get("server", "")
+            argv, _srv = servers.terminal_argv(pid, server_id)
+            sid = f"srv-{pid}-{server_id}"
+        except (ValueError, P.ProjectError) as e:
+            ws.send(f"\r\n\x1b[31m{getattr(e, 'message', e)}\x1b[0m\r\n")
+            return
 
-        alive = [True]
+    with _term_lock:
+        session = _term_sessions.get(sid) if sid else None
+        if session is None or not session.alive:
+            session = TermSession(sid or f"tmp-{time.time_ns()}", cwd, mode, argv)
+            if sid:
+                _term_sessions[sid] = session
 
-        # Thread: PTY output -> WebSocket
-        def read_pty():
-            while alive[0]:
-                try:
-                    rlist, _, _ = select.select([fd], [], [], 0.02)
-                    if rlist:
-                        data = os.read(fd, 16384)
-                        if not data:
-                            break
-                        try:
-                            ws.send(data.decode("utf-8", errors="replace"))
-                        except Exception:
-                            break
-                except (OSError, IOError):
-                    break
-            alive[0] = False
-
-        reader = threading.Thread(target=read_pty, daemon=True)
-        reader.start()
-
-        # Main loop: WebSocket input -> PTY
-        from simple_websocket import ConnectionClosed
-        try:
-            while alive[0]:
-                try:
-                    data = ws.receive(timeout=5)
-                except ConnectionClosed:
-                    break
-                except Exception:
+    from simple_websocket import ConnectionClosed
+    session.attach(ws)
+    try:
+        while session.alive:
+            try:
+                data = ws.receive(timeout=5)
+            except ConnectionClosed:
+                break
+            if data is None:
+                continue  # timeout — keep waiting, don't kill terminal
+            if isinstance(data, str):
+                if data.startswith("\x1b[RESIZE:"):
+                    try:
+                        rows, cols = data.split(":")[1].rstrip("]").split(",")
+                        session.resize(int(rows), int(cols))
+                    except Exception:
+                        pass
                     continue
-                if data is None:
-                    continue  # timeout — keep waiting, don't kill terminal
-                if isinstance(data, str):
-                    if data.startswith("\x1b[RESIZE:"):
-                        try:
-                            parts = data.split(":")[1].rstrip("]").split(",")
-                            rows, cols = int(parts[0]), int(parts[1])
-                            fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-                            os.kill(child_pid, signal.SIGWINCH)
-                        except Exception:
-                            pass
-                        continue
-                    os.write(fd, data.encode("utf-8"))
-                else:
-                    os.write(fd, data)
-        except Exception:
-            pass
-        finally:
-            alive[0] = False
-            try:
-                os.kill(child_pid, signal.SIGTERM)
-                os.waitpid(child_pid, 0)
-            except Exception:
-                pass
-            try:
-                os.close(fd)
-            except Exception:
-                pass
+                data = data.encode("utf-8")
+            session.write(data)
+    except Exception:
+        pass
+    finally:
+        session.detach(ws)
+        if not sid:
+            session.kill()
+
+
+@app.route("/api/terminal/sessions")
+def api_terminal_sessions():
+    with _term_lock:
+        items = [{"sid": s.sid, "cwd": s.cwd, "mode": s.mode, "created": s.created,
+                  "clients": len(s.clients)}
+                 for s in _term_sessions.values() if s.alive]
+    return jsonify(items)
+
+
+@app.route("/api/terminal/sessions/<sid>", methods=["DELETE"])
+def api_terminal_session_kill(sid):
+    with _term_lock:
+        session = _term_sessions.pop(sid, None)
+    if session:
+        session.kill()
+    return jsonify({"success": True, "killed": bool(session)})
 
 
 @app.route("/api/terminal/exec", methods=["POST"])
@@ -2143,7 +2178,7 @@ def api_scan_detect():
                         cp = pdir / cn
                         if cp.exists() and cp.is_dir():
                             try:
-                                cache_size += dir_size(str(cp))
+                                cache_size += fast_size(str(cp))
                             except (PermissionError, OSError):
                                 pass
 
@@ -2171,25 +2206,17 @@ def api_scan_detect():
 
 @app.route("/api/scan/import", methods=["POST"])
 def api_scan_import():
-    """Import detected projects into DB."""
-    projects = request.json.get("projects", [])
-    imported = 0
-    for p in projects:
+    """Import scanned folders. mode: move (into ~/devpilot/projects, default) | link (keep in place)."""
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode", "move")
+    imported, errors = [], []
+    for p in data.get("projects", []):
         try:
-            name = p["name"]
-            pid = db.create_project(
-                name=name,
-                color=p.get("color", "#8b5cf6"),
-                description=f"Auto-detecte ({p.get('manifest', '')})",
-                path=p.get("path", ""),
-            )
-            # Auto-add rule for this project
-            pattern = re.escape(name.lower())
-            db.add_rule(pattern=pattern, project_id=pid, resource_type="any")
-            imported += 1
-        except Exception:
-            pass
-    return jsonify({"success": True, "imported": imported})
+            proj = P.adopt(p.get("path", ""), mode=mode, name=p.get("name"))
+            imported.append({"id": proj["id"], "name": proj["name"], "path": proj["path"]})
+        except P.ProjectError as e:
+            errors.append(f'{p.get("name", "?")} : {e.message}')
+    return jsonify({"success": True, "imported": len(imported), "projects": imported, "errors": errors})
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2272,10 +2299,17 @@ def api_delete_rule(rid):
 def api_settings():
     settings = db.get_all_settings()
     # Mask sensitive values
-    sensitive_suffixes = ("_token", "_key", "_secret", "_access_key", "_secret_access_key")
-    for k in settings:
-        if any(k.endswith(s) for s in sensitive_suffixes) and settings[k]:
-            settings[k] = settings[k][:4] + "****" if len(settings[k]) > 4 else "****"
+    sensitive = ("token", "secret", "key", "password", "passphrase")
+    for k in list(settings):
+        v = settings[k]
+        if k == "hosting_accounts":                       # list with plaintext tokens: never sent
+            try:
+                accts = json.loads(v or "[]")
+                settings[k] = json.dumps([{**a, "token": "****" if a.get("token") else ""} for a in accts])
+            except (ValueError, TypeError):
+                settings[k] = "[]"
+        elif any(x in k.lower() for x in sensitive) and isinstance(v, str) and v:
+            settings[k] = v[:4] + "****" if len(v) > 4 else "****"
     return jsonify(settings)
 
 
@@ -2655,5 +2689,6 @@ if __name__ == "__main__":
     port = 5555
     print(f"\n  DevPilot -> http://localhost:{port}\n")
     # Open browser on launch (desktop shortcut or terminal)
-    threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+    if not os.environ.get("DEVPILOT_NO_BROWSER"):
+        threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{port}")).start()
     app.run(host="127.0.0.1", port=port, debug=False)

@@ -13,3 +13,4 @@ node_modules/
 *.bak
 templates/dashboard_backup_original.html
 templates/dashboard_new.html
+.venv/
