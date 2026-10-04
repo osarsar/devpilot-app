@@ -40,7 +40,18 @@ mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/devpilot" << 'SCRIPT'
 #!/bin/bash
 APP_DIR="$HOME/devpilot/.devpilot/app"
-[ "${1:-}" = "update" ] && { shift; exec "$APP_DIR/update.sh" "$@"; }
+case "${1:-}" in
+  update|maj)        shift; exec "$APP_DIR/update.sh" "$@" ;;
+  publish|publier)   shift; exec "$APP_DIR/publish.sh" "$@" ;;
+  version)           git -C "$APP_DIR" fetch -q origin main 2>/dev/null
+                     echo "ce PC   : $(git -C "$APP_DIR" log -1 --format='%h %s (%cr)')"
+                     echo "GitHub  : $(git -C "$APP_DIR" log -1 --format='%h %s (%cr)' origin/main)"
+                     exit 0 ;;
+  help|-h|--help)    echo "devpilot                 lancer DevPilot"
+                     echo "devpilot publish \"msg\"   publier mes modifications (tests, PR, fusion) pour tous les PC"
+                     echo "devpilot update          récupérer la dernière version publiée"
+                     echo "devpilot version         ce PC comparé à GitHub"; exit 0 ;;
+esac
 PY="$APP_DIR/.venv/bin/python"; [ -x "$PY" ] || PY=python3
 cd "$APP_DIR" && exec "$PY" dashboard.py "$@"
 SCRIPT
