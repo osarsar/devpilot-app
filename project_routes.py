@@ -610,6 +610,12 @@ def api_dev_repos(pid):
     return _ok(**DV.repos(pid, fetch=_flag(request.args.get("fetch"))), tools=DV.tools())
 
 
+@projects_bp.route("/api/projects/<int:pid>/dev/previews")
+def api_dev_previews(pid):
+    import preview
+    return _ok(previews=preview.previews(pid))
+
+
 @projects_bp.route("/api/projects/<int:pid>/dev/prs")
 def api_dev_prs(pid):
     return _ok(prs=DV.prs(pid))
