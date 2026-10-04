@@ -26,6 +26,7 @@ from cloud_routes import cloud_bp
 import projects as P
 import servers
 import dev as dev_mod
+import persist
 import ports as ports_mod
 import sizes
 import model as M
@@ -1831,9 +1832,21 @@ _term_sessions = {}
 _term_lock = threading.Lock()
 
 
+_DA_REPLY = re.compile(rb"\x1b\[[?>][0-9;]*c")
+
+
+def _term_size(rows, cols):
+    """The browser terminal's size (rows, cols), within sane bounds; 40×120 when unknown."""
+    try:
+        return max(5, min(int(rows), 500)), max(20, min(int(cols), 1000))
+    except (TypeError, ValueError):
+        return 40, 120
+
+
 class TermSession:
-    def __init__(self, sid, cwd, mode, argv=None, meta=None):
+    def __init__(self, sid, cwd, mode, argv=None, meta=None, size=None):
         self.sid, self.cwd, self.mode = sid, cwd, mode
+        rows, cols = _term_size(*(size or (None, None)))
         self.meta = meta or {}                 # pid, repo, label, kind (terminal | claude | ssh | import…)
         self.buffer = bytearray()
         self.clients = set()
@@ -1859,6 +1872,19 @@ class TermSession:
         else:
             argv = ["bash", "--login"]
 
+        # PERSISTENT (tmux): the project terminal and the « Développer » sessions
+        # survive a DevPilot restart — DevPilot only attaches to them.
+        self.persistent = (persist.available() and mode in ("", "claude")
+                           and (sid.startswith("proj-") or sid.startswith("dev-")))
+        if self.persistent:
+            try:
+                if not persist.exists(sid):
+                    persist.create(sid, cwd, argv, self.meta, env={"TERM": "xterm-256color", "COLORTERM": "truecolor"},
+                                   rows=rows, cols=cols)
+                argv = persist.attach_argv(sid)
+            except Exception:
+                self.persistent = False          # tmux refuses: plain session, as before
+
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             # Child: never fall back into the Flask code, whatever happens
@@ -1871,7 +1897,7 @@ class TermSession:
             finally:
                 os._exit(1)
 
-        self.resize(40, 120)
+        self.resize(rows, cols)
         threading.Thread(target=self._read_loop, daemon=True).start()
 
     def resize(self, rows, cols):
@@ -1924,6 +1950,12 @@ class TermSession:
             self.clients.discard(ws)
 
     def write(self, data):
+        if self.persistent:
+            # tmux asks the browser terminal who it is (Device Attributes) when it attaches; xterm.js's
+            # answers must not reach the shell as typed text (« 1;2c0;276;0c » before the first command)
+            data = _DA_REPLY.sub(b"", data)
+            if not data:
+                return
         os.write(self.fd, data)
 
     def _reap(self):
@@ -1937,7 +1969,22 @@ class TermSession:
         except OSError:
             pass
 
+    def pids(self):
+        """The shells running the session (tmux: its panes; otherwise our child)."""
+        return persist.pane_pids(self.sid) if self.persistent else [self.pid]
+
+    def detach_client(self):
+        """DevPilot stops: persistent sessions stay in tmux, only our client goes."""
+        for sig in (signal.SIGHUP, signal.SIGKILL):
+            try:
+                os.kill(self.pid, sig)
+            except OSError:
+                return
+            time.sleep(0.05)
+
     def kill(self):
+        if self.persistent:                      # for good: what runs in it, then the tmux session
+            persist.kill(self.sid, ports_mod.kill_tree)
         # First what the shell started (a dev server keeps its own process group:
         # SIGHUP to bash would not reach it), then bash itself.
         try:
@@ -1970,23 +2017,30 @@ def _project_sessions(project):
                 or (root and P.resolve(s.cwd).is_relative_to(root))]
 
 
+_EN_SORTIE = [False]       # DevPilot is stopping: persistent sessions are detached, not killed
+
+
 def _close_project_sessions(project):
     sessions = _project_sessions(project)
     for s in sessions:
         with _term_lock:
             _term_sessions.pop(s.sid, None)
-        s.kill()
+        if _EN_SORTIE[0] and getattr(s, "persistent", False):
+            s.detach_client()
+        else:
+            s.kill()
     return len(sessions)
 
 
-# ports.py sees the project's terminals (bash pids) and can close them
-ports_mod.session_pids = lambda project: [s.pid for s in _project_sessions(project) if s.alive]
+# ports.py sees the project's terminals (their shells) and can close them
+ports_mod.session_pids = lambda project: [pid for s in _project_sessions(project) if s.alive for pid in s.pids()]
 ports_mod.close_sessions = _close_project_sessions
 
 
 def _stop_everything_on_exit(*_):
     """DevPilot stops: consoles it started and all terminals stop with it (setting stop_on_exit)."""
     try:
+        _EN_SORTIE[0] = True
         if db.get_setting("stop_on_exit", "1") != "1":
             return
         ports_mod.close_all(db.get_projects())
@@ -2006,6 +2060,31 @@ for _sig in (signal.SIGTERM, signal.SIGINT):
 # DevPilot's own idle shells don't block a move/delete (what runs in them does)
 P.ignored_pids.append(lambda: [s.pid for s in list(_term_sessions.values())])
 P.on_removed.append(_close_project_sessions)
+
+
+def _restore_sessions():
+    """At startup: the tmux sessions left by the previous DevPilot are attached again."""
+    if not persist.available():
+        return 0
+    n = 0
+    for x in persist.list_sessions():
+        sid = x["sid"]
+        if sid in _term_sessions:
+            continue
+        meta = {k: v for k, v in x["meta"].items() if k != "sid"}
+        mode = "claude" if meta.get("kind") == "claude" else ""
+        try:
+            sess = TermSession(sid, x["cwd"] or str(DEVPILOT_PROJECTS), mode, None, meta=meta)
+            sess.created = x["created"] or sess.created
+            with _term_lock:
+                _term_sessions[sid] = sess
+            n += 1
+        except Exception:
+            continue
+    return n
+
+
+_restore_sessions()
 
 
 @sock.route("/api/terminal/ws")
@@ -2036,7 +2115,8 @@ def terminal_ws(ws):
     with _term_lock:
         session = _term_sessions.get(sid) if sid else None
         if session is None or not session.alive:
-            session = TermSession(sid or f"tmp-{time.time_ns()}", cwd, mode, argv)
+            session = TermSession(sid or f"tmp-{time.time_ns()}", cwd, mode, argv,
+                                  size=(request.args.get("rows"), request.args.get("cols")))
             if sid:
                 _term_sessions[sid] = session
 
@@ -2096,6 +2176,7 @@ def _session_info(s, projects_by_path):
     else:
         label = s.meta.get("label") or {"claude": "Claude", "ssh": "SSH", "import": "Import"}.get(kind, "Terminal")
     return {"sid": s.sid, "cwd": s.cwd, "mode": s.mode, "kind": kind, "label": label, "created": s.created,
+            "persistent": bool(getattr(s, "persistent", False)),
             "clients": len(s.clients), "pid": proj["id"] if proj else None, "project": proj["name"] if proj else None,
             "repo": repo, "branch": br}
 
@@ -2144,7 +2225,8 @@ def api_terminal_session_new():
     sid = f"dev-{pid}-{time.time_ns() % 10**10}"
     with _term_lock:
         _term_sessions[sid] = TermSession(sid, str(path), "claude" if kind == "claude" else "", None,
-                                          meta={"pid": pid, "repo": repo, "label": label, "kind": kind})
+                                          meta={"pid": pid, "repo": repo, "label": label, "kind": kind},
+                                          size=(data.get("rows"), data.get("cols")))
     return jsonify({"success": True, "sid": sid, "cwd": str(path), "label": label, "kind": kind})
 
 

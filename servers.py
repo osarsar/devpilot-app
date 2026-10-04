@@ -191,7 +191,10 @@ def _now():
 
 def ssh_base(s, tty=False):
     """ssh argv for a server — built only from the stored, validated config."""
-    args = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10",
+    # known_hosts explicite : le même que sshaccess (paramiko) — ssh lit sinon celui du
+    # compte (pas $HOME), ce que les tests et les deux vérifications ne partageaient pas
+    kh = os.path.join(os.path.expanduser("~"), ".ssh", "known_hosts")
+    args = ["ssh", "-o", "StrictHostKeyChecking=accept-new", "-o", f"UserKnownHostsFile={kh}", "-o", "ConnectTimeout=10",
             "-o", "ServerAliveInterval=30", "-p", str(s.get("port") or 22)]
     if s.get("key_path"):
         args += ["-i", s["key_path"], "-o", "IdentitiesOnly=yes"]
