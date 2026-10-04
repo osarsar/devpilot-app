@@ -2,6 +2,7 @@
 trash) and fresh db/projects modules bound to it."""
 import importlib
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -23,11 +24,20 @@ def home(tmp_path, monkeypatch):
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     for k, v in GIT_ENV.items():
         monkeypatch.setenv(k, v)
+    # never the user's own DevPilot tmux server (persistent sessions)
+    monkeypatch.setenv("DEVPILOT_TMUX_SOCKET", f"dptest-{os.getpid()}-{h.parent.name}")
     import db
     importlib.reload(db)
     import projects
     importlib.reload(projects)
-    return h
+    yield h
+    # le serveur tmux du test (sessions persistantes) ne doit pas lui survivre
+    if shutil.which("tmux"):
+        subprocess.run(["tmux", "-L", f"dptest-{os.getpid()}-{h.parent.name}", "kill-server"], capture_output=True)
+    try:                                     # le fichier de socket reste après kill-server
+        os.unlink(f"/tmp/tmux-{os.getuid()}/dptest-{os.getpid()}-{h.parent.name}")
+    except OSError:
+        pass
 
 
 @pytest.fixture

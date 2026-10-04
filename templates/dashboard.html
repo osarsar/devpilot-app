@@ -5028,7 +5028,10 @@ function renderWsDev() {
         </div>
         <div class="dev-last">Dernier commit : <span class="mono">${hx(r.last.sha)}</span> ${hx(r.last.message)}</div>
       </div>` : ''}
-      <div class="dev-sec"><span>Sessions de ce projet</span></div>
+      <div class="dev-sec"><span>Sessions de ce projet</span>
+        ${t.persistence && t.persistence.ok ? '<span class="dev-chip info" title="elles survivent à un redémarrage de DevPilot (tmux)">persistantes</span>' : ''}</div>
+      ${t.persistence && !t.persistence.ok ? `<div class="dev-info">Les sessions s'arrêtent quand DevPilot redémarre. Pour les garder (Claude, un serveur de dev…), installe tmux :
+          <code class="mono">sudo apt install -y tmux</code> puis relance DevPilot.</div>` : ''}
       <div id="dev-sessions"><div class="dev-wait"><span class="dev-spin"></span></div></div>`;
     renderDevSessions();
 }
@@ -5117,7 +5120,7 @@ function renderDevSessions() {
     z.innerHTML = devSessions.map(s => `<div class="dev-sess ${s.sid === actif ? 'on' : ''}">
         <span class="dev-sk">${DEV_KIND_ICO[s.kind] || '›_'}</span>
         <span class="dev-sl"><b>${hx(s.sid === base ? 'Terminal du projet' : s.label)}</b>
-          <span class="dev-ss">${hx(s.repo || '.')}${s.branch ? ' · ' + hx(s.branch) : ''} · ${hx(devDepuis(s.created))}</span></span>
+          <span class="dev-ss">${hx(s.repo || '.')}${s.branch ? ' · ' + hx(s.branch) : ''} · ${hx(devDepuis(s.created))}${s.persistent ? ' · persistante' : ''}</span></span>
         <button class="btn btn-xs" onclick="wsAttach('${hx(s.sid)}')">${s.sid === actif ? 'Affichée' : 'Afficher'}</button>
         ${s.sid !== base ? `<button class="btn btn-xs" onclick="wsKill('${hx(s.sid)}')" title="Arrête la session (et ce qui tourne dedans)">Fermer</button>` : ''}</div>`).join('');
 }
@@ -5134,7 +5137,7 @@ function wsAttach(sid) {
 async function wsNewSession(kind, repo) {
     const pid = wsProjectId; if (!pid) return;
     const r = repo !== undefined ? repo : (devCur() ? devCur().dir : '.');
-    const x = await apiJson('POST', 'terminal/sessions', {pid, repo: r, kind});
+    const x = await apiJson('POST', 'terminal/sessions', {pid, repo: r, kind, rows: xterm && xterm.rows, cols: xterm && xterm.cols});
     if (!x.success){ toast(devErr(x), 'error'); return; }
     await loadTermTabs();
     wsAttach(x.sid);
@@ -5156,7 +5159,7 @@ async function loadSessionsPage() {
     if (!l.length){ z.innerHTML = '<div class="card"><div class="dev-vide">Aucune session ouverte. Ouvre un projet, onglet « Développer », puis « ✦ Claude » ou « ›_ Terminal ».</div></div>'; return; }
     const groupes = {};
     l.forEach(s => { (groupes[s.project || 'Hors projet'] = groupes[s.project || 'Hors projet'] || []).push(s); });
-    z.innerHTML = `<div class="dev-intro">${l.length} session${l.length > 1 ? 's' : ''} ouverte${l.length > 1 ? 's' : ''}. Elles continuent en arrière-plan ; fermer un projet (« Fermer le projet ») arrête les siennes.</div>`
+    z.innerHTML = `<div class="dev-intro">${l.length} session${l.length > 1 ? 's' : ''} ouverte${l.length > 1 ? 's' : ''}. Elles continuent en arrière-plan${l.some(s => s.persistent) ? ', même si DevPilot redémarre' : ''} ; « Fermer » ou « Fermer le projet » les arrêtent pour de bon.</div>`
       + Object.entries(groupes).map(([proj, ss]) => `<div class="card mb-12"><div class="dev-sec"><span>${hx(proj)} <span class="dev-n">${ss.length}</span></span>
           ${ss[0].pid ? `<button class="btn btn-xs" onclick="openWorkspace(${ss[0].pid})">Ouvrir le projet</button>` : ''}</div>
         ${ss.map(s => `<div class="dev-sess"><span class="dev-sk">${DEV_KIND_ICO[s.kind] || '›_'}</span>
@@ -5239,8 +5242,9 @@ function startXterm(cwd, pid, sid) {
     fitAddon = new FitAddon.FitAddon();
     xterm.loadAddon(fitAddon);
     xterm.open(container);
+    try { fitAddon.fit(); } catch(e) {}           // the real size, sent on connect (a new tmux session starts at it)
 
-    // Fit after a small delay to ensure container is sized
+    // Fit again after a small delay, once the container is surely sized
     setTimeout(() => {
         try { fitAddon.fit(); } catch(e) {}
     }, 100);
@@ -5251,7 +5255,7 @@ function startXterm(cwd, pid, sid) {
     });
 
     // Connect WebSocket
-    const wsUrl = terminalWsUrl({ cwd: cwd, sid: sid || projectTermSid(pid) });
+    const wsUrl = terminalWsUrl({ cwd: cwd, sid: sid || projectTermSid(pid), rows: xterm.rows, cols: xterm.cols });
     xtermWs = new WebSocket(wsUrl);
 
     xtermWs.onopen = () => {

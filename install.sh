@@ -39,7 +39,10 @@ echo "  [3/6] Creation des commandes CLI..."
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/devpilot" << 'SCRIPT'
 #!/bin/bash
-cd "$HOME/devpilot/.devpilot/app" && exec .venv/bin/python dashboard.py "$@"
+APP_DIR="$HOME/devpilot/.devpilot/app"
+[ "${1:-}" = "update" ] && { shift; exec "$APP_DIR/update.sh" "$@"; }
+PY="$APP_DIR/.venv/bin/python"; [ -x "$PY" ] || PY=python3
+cd "$APP_DIR" && exec "$PY" dashboard.py "$@"
 SCRIPT
 chmod +x "$HOME/.local/bin/devpilot"
 

@@ -252,7 +252,8 @@ def tools():
     ed = shlex.split(editor_cmd())[0] if editor_cmd() else ""
     cl = shlex.split(claude_cmd())[0] if claude_cmd() else ""
     term = next((t for t in ("gnome-terminal", "x-terminal-emulator", "konsole", "xterm") if shutil.which(t)), None)
-    return {"editor": {"cmd": editor_cmd(), "ok": bool(ed and shutil.which(ed))},
+    return {"persistence": {"ok": bool(shutil.which("tmux")), "cmd": "tmux"},
+            "editor": {"cmd": editor_cmd(), "ok": bool(ed and shutil.which(ed))},
             "claude": {"cmd": claude_cmd(), "ok": bool(cl and shutil.which(cl))},
             "external_terminal": {"cmd": term, "ok": bool(term)}}
 
