@@ -1297,6 +1297,70 @@ select.form-input { cursor: pointer; }
 .term-sous{font-size:10px;color:var(--text-4);font-family:'JetBrains Mono',monospace}
 .term-x{margin-left:2px;color:var(--text-4);padding:0 2px;border-radius:3px}
 .term-x:hover{color:#f43f5e;background:rgba(244,63,94,.12)}
+/* aperçu local : où voir ce dépôt tourner */
+.dev-prev{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px}
+.dev-live{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--emerald);text-decoration:none;
+  border:1px solid rgba(34,211,167,.35);background:var(--emerald-dim);border-radius:7px;padding:4px 10px}
+.dev-live:hover{border-color:var(--emerald)}
+.dev-live small{font-weight:500;color:var(--text-3)}
+.dev-live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--emerald);box-shadow:0 0 6px var(--emerald)}
+.dev-off{font-size:11.5px;color:var(--text-3);line-height:1.6}
+.dev-off code{font-size:11px;color:var(--text-1)}
+.dev-chip.live{color:var(--emerald);background:var(--emerald-dim)}
+.dev-api{font-size:11px;color:var(--text-3);text-decoration:none;border:1px solid var(--border-2);border-radius:6px;padding:3px 8px;font-family:'JetBrains Mono',monospace}
+.dev-down{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--rose);border:1px solid rgba(244,63,94,.35);background:var(--rose-dim);border-radius:7px;padding:4px 10px}
+.dev-down small{font-weight:500;opacity:.8}
+.dev-api:hover{color:var(--text-1);border-color:var(--text-4)}
+/* ── carte des branches : dépôt → branche de travail → main ── */
+#brm-modal{width:min(1180px,96vw);min-width:0;max-height:92vh;padding:20px 22px}
+.brm-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.brm-head h3{margin:0!important;flex:1;min-width:180px}
+.brm-intro{font-size:12px;color:var(--text-3);margin-bottom:10px;line-height:1.6}
+.brm-intro b{color:var(--text-1)}
+.brm-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-3);margin-bottom:16px}
+.brm-leg i{display:inline-block;width:22px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+.brm-wrap{position:relative}
+.brm-grid{display:grid;grid-template-columns:minmax(140px,210px) minmax(240px,1fr) minmax(130px,170px);column-gap:64px;row-gap:12px;position:relative;z-index:1}
+.brm-svg{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible}
+.brm-box{background:var(--bg-2);border:1px solid var(--border-2);border-radius:10px;padding:9px 11px;font-size:12px;position:relative;min-width:0}
+.brm-repo{grid-column:1;align-self:start}
+.brm-repo b{font-size:13px;color:var(--text-0)}
+.brm-dir{font-size:10.5px;color:var(--text-4);font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brm-br{grid-column:2;border-left:3px solid var(--violet)}
+.brm-br.none{border:1.5px dashed var(--text-4);background:transparent}
+.brm-br.todo{border-left-color:var(--blue)}
+.brm-br.done{border-left-color:var(--emerald)}
+.brm-br.empty{border-left-color:var(--text-3)}
+.brm-bn{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--violet);font-weight:600;word-break:break-all}
+.brm-none-t{font-weight:650;color:var(--text-1)}
+.brm-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.brm-chips:empty{display:none}
+.brm-ok{color:var(--emerald)!important;background:var(--emerald-dim)!important}
+.brm-state{margin-top:7px;font-size:11.5px;line-height:1.55;color:var(--text-2)}
+.brm-state b{color:var(--text-1)}
+.brm-state a{color:var(--blue)}
+.brm-act{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.brm-act .btn{font-size:11px;padding:3px 8px}
+.brm-new{display:flex;gap:5px;margin-top:8px}
+.brm-new .form-input{flex:1;min-width:0;font-size:12px;padding:5px 7px}
+.brm-carry{display:flex;gap:5px;align-items:center;font-size:11px;color:var(--text-3);margin-top:5px;cursor:pointer}
+.brm-main{grid-column:3;grid-row:1 / span var(--brm-rows,1);align-self:center;text-align:center;border:1.5px solid var(--emerald);padding:16px 10px}
+.brm-main b{font-size:15px;color:var(--emerald);font-family:'JetBrains Mono',monospace}
+.brm-sum{font-size:11px;color:var(--text-3);margin-top:8px;line-height:1.7}
+.brm-tomain{display:none}
+.brm-wait{font-size:12px;color:var(--text-4);padding:20px 4px}
+@media (max-width:760px){
+  #brm-modal{padding:14px}
+  .brm-grid{grid-template-columns:minmax(0,1fr);row-gap:0}
+  .brm-svg,.brm-main{display:none}
+  .brm-repo,.brm-br{grid-column:1;grid-row:auto!important}
+  .brm-repo{margin-top:18px}
+  .brm-repo:first-child{margin-top:0}
+  .brm-repo::after{content:"↓";position:absolute;left:50%;bottom:-19px;color:var(--text-4);font-size:13px}
+  .brm-br{margin-top:20px}
+  .brm-tomain{display:block;margin-top:20px;text-align:center;font-size:11px;font-family:'JetBrains Mono',monospace;
+    border:1px solid var(--emerald);color:var(--emerald);border-radius:8px;padding:4px}
+}
 </style>
 </head>
 <body>
@@ -2316,6 +2380,23 @@ select.form-input { cursor: pointer; }
         <button class="btn" onclick="closeModals()">Plus tard</button>
         <button class="btn btn-primary" id="rec-apply" onclick="recApply()" disabled>Appliquer</button>
     </div>
+</div>
+
+<!-- Carte des branches d'un projet : dépôt → branche de travail → main -->
+<div class="modal" id="brm-modal">
+    <div class="brm-head">
+        <h3 id="brm-title">Branches</h3>
+        <button class="btn btn-sm" id="brm-refresh" onclick="brmLoad(true)" title="Relit GitHub (git fetch) et les PR">Actualiser depuis GitHub</button>
+        <button class="btn btn-sm" onclick="closeModals()">Fermer</button>
+    </div>
+    <div class="brm-intro">Chaque dépôt a sa <b>branche de travail</b> : tu y fais tes changements et tu la pousses autant que tu veux.
+        <b>main</b> ne change que quand une branche y est <b>fusionnée</b> (PR), et c'est main qui part en production.</div>
+    <div class="brm-leg">
+        <span><i style="border-color:var(--blue)"></i>à fusionner</span>
+        <span><i style="border-color:var(--emerald)"></i>déjà dans main</span>
+        <span><i style="border-color:var(--text-3);border-top-style:dashed"></i>rien encore / pas de branche</span>
+    </div>
+    <div id="brm-body"><div class="brm-wait"><span class="dev-spin"></span> Lecture des dépôts…</div></div>
 </div>
 
 <!-- Server of a project: add / change -->
@@ -4943,6 +5024,7 @@ function loadWsGit() {
    Claude, VS Code, un terminal — dans DevPilot ou dans une fenêtre.
    Plusieurs sessions par projet, en onglets au-dessus du terminal.  */
 let devState = null;              // {repos, tools} du projet ouvert
+let devPreviews = {};             // dir → {running:[{port,url,via,name}], start:{cmd,cwd,why}}
 let wsDevRepo = null;             // dir du dépôt choisi ('.' = racine)
 let wsTermSid = null;             // session affichée dans le terminal
 const devBranches = {};           // cache des branches par dépôt
@@ -4959,6 +5041,7 @@ async function loadWsDev(fetchGh) {
     if (pid !== wsProjectId) return;
     if (!r.success){ el.innerHTML = `<div class="alert alert-warning">${hx(devErr(r))}</div>`; return; }
     devState = r;
+    loadDevPreviews();
     let saved = null; try { saved = localStorage.getItem(devRepoKey(pid)); } catch (e) {}
     if (!r.repos.some(x => x.dir === wsDevRepo)) wsDevRepo = r.repos.some(x => x.dir === saved) ? saved : (r.repos[0] || {}).dir || null;
     renderWsDev();
@@ -4978,6 +5061,12 @@ function devRepoRow(r) {
     if (r.for_base) chips.push(`<span class="dev-chip" title="commits de cette branche pas encore dans ${hx(r.base)}">↑${r.for_base} pour ${hx(r.base)}</span>`);
     if (r.ahead) chips.push(`<span class="dev-chip info" title="commits pas encore poussés sur GitHub">${r.ahead} à pousser</span>`);
     if (r.rebasing || r.merging) chips.push(`<span class="dev-chip bad">${r.rebasing ? 'rebase' : 'fusion'} en cours</span>`);
+    const pv = devPrev(r.dir);
+    if (pv && pv.running.length) {
+        const pg_ = pv.running.filter(x => x.kind === 'page'), ap = pv.running.filter(x => x.kind === 'api').length;
+        if (pv.running.some(x => x.kind === 'down')) chips.push(`<span class="dev-chip bad" title="le port est ouvert mais rien ne répond">● ne répond pas</span>`);
+        else chips.push(`<span class="dev-chip live" title="tourne sur ce PC">● ${pg_.length ? pg_.map(x => ':' + x.port).join(' ') : 'API'}${pg_.length && ap ? ` <span style="opacity:.6">+${ap} API</span>` : ''}</span>`);
+    }
     const sel = r.dir === wsDevRepo ? ' on' : '';
     return `<button class="dev-repo${sel}" onclick="devChoose('${hx(r.dir)}')" title="${hx(r.path)}">
         <span class="dev-rn">${hx(r.name)}</span>
@@ -4999,7 +5088,8 @@ function renderWsDev() {
     const outil = (ok, cmd) => ok ? '' : `disabled title="introuvable : ${hx(cmd)} — Paramètres → Outils de développement"`;
     el.innerHTML = `
       <div class="dev-sec"><span>Dépôts <span class="dev-n">${devState.repos.length}</span></span>
-        <button class="btn btn-xs" onclick="this.disabled=true;this.innerHTML='<span class=dev-spin></span> GitHub…';loadWsDev(true)" title="Relit aussi GitHub (git fetch)">Actualiser</button></div>
+        <span style="display:flex;gap:6px"><button class="btn btn-xs" id="dev-brm-btn" onclick="brmOpen()" title="Voir chaque dépôt, sa branche de travail et son chemin vers main">⎇ Carte des branches</button>
+        <button class="btn btn-xs" onclick="this.disabled=true;this.innerHTML='<span class=dev-spin></span> GitHub…';loadWsDev(true)" title="Relit aussi GitHub (git fetch)">Actualiser</button></span></div>
       <div class="dev-repos">${devState.repos.map(devRepoRow).join('')}</div>
       ${r ? `
       <div class="dev-card">
@@ -5018,6 +5108,8 @@ function renderWsDev() {
           <button class="btn btn-sm btn-primary" id="dev-new-btn" onclick="devNewBranch(this)" title="Créée depuis ${hx(r.base)} à jour (GitHub)">Créer</button>
         </div>
         <label class="dev-stash"><input type="checkbox" id="dev-stash"> mettre de côté mes modifications non commitées (git stash) si besoin</label>
+        <div class="dev-lbl">Voir en local (tes modifications en direct)</div>
+        ${devPreviewHtml(r)}
         <div class="dev-lbl">Ouvrir ici</div>
         <div class="dev-tools">
           <button class="btn btn-sm dev-claude" onclick="wsNewSession('claude')" ${outil(t.claude.ok, t.claude.cmd)} title="Claude dans ce dépôt, dans DevPilot">✦ Claude</button>
@@ -5088,6 +5180,208 @@ async function devOpen(tool, btn) {
     if (!x.success) toast(devErr(x), 'error');
     else toast(tool === 'editor' ? `${r.name} ouvert dans ${x.with}` : `Fenêtre ouverte dans ${r.name}`);
 }
+
+
+/* ── aperçu local : où voir ce dépôt tourner, en un clic ── */
+async function loadDevPreviews() {
+    const pid = wsProjectId;
+    const x = await api(`projects/${pid}/dev/previews`).catch(() => null);
+    if (pid !== wsProjectId || !x || !x.success) return;
+    const neuf = x.previews || {};
+    if (JSON.stringify(neuf) === JSON.stringify(devPreviews)) return;     // rien de changé : ne pas effacer une saisie
+    devPreviews = neuf;
+    renderWsDev(); brmRender();
+}
+function devPrev(dir) { return devPreviews[dir] || null; }
+function devPreviewHtml(r) {
+    const pv = devPrev(r.dir);
+    if (!pv) return '<div class="dev-off"><span class="dev-spin"></span> recherche…</div>';
+    if (pv.running.length) {
+        const pages = pv.running.filter(x => x.kind === 'page'), apis = pv.running.filter(x => x.kind === 'api'),
+              morts = pv.running.filter(x => x.kind === 'down');
+        const d = x => (x.via === 'docker' ? 'conteneur ' : 'processus ') + x.name;
+        return `<div class="dev-prev">${pages.map(x =>
+            `<a class="dev-live" href="${hx(x.url)}" target="_blank" rel="noopener" title="La page à ouvrir — ${hx(d(x))}">localhost:${x.port} <small>ouvrir ↗</small></a>`).join('')}
+          ${morts.map(x => `<span class="dev-down" title="Le port est ouvert mais rien ne répond : le service démarre encore, ou il a planté.">localhost:${x.port} <small>ne répond pas</small></span>`).join('')}
+          ${apis.map(x => `<a class="dev-api" href="${hx(x.docs || x.url)}" target="_blank" rel="noopener"
+              title="API (JSON) utilisée par ${pages.length ? 'la page' : 'les autres services'} — pas une page à ouvrir. ${x.docs ? 'Lien : sa documentation /docs' : ''} — ${hx(d(x))}">API :${x.port}${x.docs ? ' · docs' : ''}</a>`).join('')}</div>
+          ${morts.length ? `<div class="dev-off" style="color:var(--rose)">Pour voir pourquoi : <code>${hx(morts[0].logs || './dev.sh logs')}</code>
+              <button class="btn btn-xs" onclick="devLogs('${hx(r.dir)}')">Voir les journaux</button></div>` : ''}`;
+    }
+    if (pv.start) return `<div class="dev-off">Pas lancé sur ce PC.
+        <button class="btn btn-xs btn-primary" onclick="devStart('${hx(r.dir)}', this)">▶ Lancer</button>
+        <code>${hx(pv.start.cmd)}</code> dans <code>${hx(pv.start.cwd)}</code> <span style="color:var(--text-4)">(${hx(pv.start.why)})</span></div>`;
+    return '<div class="dev-off">Rien ne tourne pour ce dépôt, et aucune commande de lancement trouvée (dev.sh, npm run dev).</div>';
+}
+async function devLogs(dir) {
+    // the logs of the service that does not answer, in a terminal (the command comes from DevPilot's detection)
+    const pid = wsProjectId;
+    const x = await apiJson('POST', 'terminal/sessions', {pid, repo: dir, logs: true, rows: xterm && xterm.rows, cols: xterm && xterm.cols});
+    if (!x.success){ toast(devErr(x), 'error'); return; }
+    closeModals(); await loadTermTabs(); wsAttach(x.sid);
+}
+async function devStart(dir, btn) {
+    const pid = wsProjectId;
+    if (btn){ btn.disabled = true; btn.innerHTML = '<span class="dev-spin"></span> lancement…'; }
+    closeModals();
+    const x = await apiJson('POST', 'terminal/sessions', {pid, repo: dir, start: true, rows: xterm && xterm.rows, cols: xterm && xterm.cols});
+    if (!x.success){ toast(devErr(x), 'error'); if (btn){ btn.disabled = false; btn.textContent = '▶ Lancer'; } return; }
+    await loadTermTabs(); wsAttach(x.sid);
+    toast(`${x.run} lancé — l'adresse apparaît dès que ça répond`, 'info');
+    for (let i = 0; i < 45 && pid === wsProjectId; i++) {          // jusqu'à ~90 s (npm install la 1re fois)
+        await new Promise(res => setTimeout(res, 2000));
+        await loadDevPreviews();
+        const pv = devPrev(dir);
+        if (pv && pv.running.length){ toast(`Prêt : localhost:${pv.running[0].port} — clique pour ouvrir`); return; }
+    }
+}
+
+/* ── carte des branches : dépôt → branche de travail → main ── */
+let brmPrs = {};
+const BRM_PR = {OPEN: 'ouverte', MERGED: 'fusionnée', CLOSED: 'fermée'};
+function brmOpen() {
+    closeModals();
+    document.getElementById('overlay').classList.add('visible');
+    document.getElementById('brm-modal').classList.add('visible');
+    document.getElementById('brm-title').textContent = 'Branches — ' + ((devState && devState.project) || '');
+    brmRender();
+    brmLoad(false);
+}
+async function brmLoad(fetchGh) {
+    const pid = wsProjectId, btn = document.getElementById('brm-refresh');
+    if (fetchGh){ btn.disabled = true; btn.innerHTML = '<span class="dev-spin"></span> GitHub…'; }
+    await loadWsDev(fetchGh);
+    brmRender();
+    const p = await api(`projects/${pid}/dev/prs`).catch(() => null);
+    if (pid !== wsProjectId) return;
+    if (p && p.success){ brmPrs = p.prs || {}; brmRender(); }
+    btn.disabled = false; btn.innerHTML = 'Actualiser depuis GitHub';
+}
+function brmVisible() { const m = document.getElementById('brm-modal'); return m && m.classList.contains('visible'); }
+
+function brmBranch(r, i) {
+    const pr = brmPrs[r.dir];
+    const id = 'brm-n-' + i;
+    const creer = (label, carry) => `<div class="brm-new"><input class="form-input mono" id="${id}" placeholder="feat/mon-changement"
+            onkeydown="if(event.key==='Enter')brmCreate(${i}, this.nextElementSibling)"><button class="btn btn-sm btn-primary" onclick="brmCreate(${i}, this)">${label}</button></div>
+        ${carry ? `<label class="brm-carry"><input type="checkbox" id="${id}-carry" checked> emporter mes ${r.modified} modification${r.modified > 1 ? 's' : ''} sur la nouvelle branche</label>` : ''}`;
+    if (r.on_base) {
+        return `<div class="brm-box brm-br none" data-row="${i}" data-state="none">
+            <div class="brm-none-t">Pas de branche de travail</div>
+            <div class="brm-state">Ce dépôt est sur <b>${hx(r.base)}</b>. Pour y changer quelque chose, crée d'abord ta branche
+              (elle part de ${hx(r.base)} à jour sur GitHub).</div>
+            ${r.modified ? `<div class="brm-chips"><span class="dev-chip warn">${r.modified} fichier${r.modified > 1 ? 's' : ''} modifié${r.modified > 1 ? 's' : ''} sur ${hx(r.base)}</span></div>` : ''}
+            ${creer('Créer la branche', r.modified > 0)}
+            <div style="margin-top:8px">${devPreviewHtml(r)}</div>
+            <div class="brm-tomain">${hx(r.base)}</div></div>`;
+    }
+    const chips = [];
+    if (r.modified) chips.push(`<span class="dev-chip warn" title="pas encore commités">✎ ${r.modified} modifié${r.modified > 1 ? 's' : ''}</span>`);
+    if (r.untracked) chips.push(`<span class="dev-chip" title="nouveaux fichiers">+${r.untracked} nouveau${r.untracked > 1 ? 'x' : ''}</span>`);
+    if (!r.remote_branch) chips.push(`<span class="dev-chip warn" title="seulement sur ce PC">jamais poussée</span>`);
+    else if (r.to_push) chips.push(`<span class="dev-chip info" title="commits pas encore sur GitHub">↑ ${r.to_push} à pousser</span>`);
+    else chips.push(`<span class="dev-chip brm-ok" title="ta branche est sauvegardée sur GitHub">✓ sur GitHub</span>`);
+    if (r.to_pull) chips.push(`<span class="dev-chip warn" title="poussés depuis un autre PC">↓ ${r.to_pull} à récupérer</span>`);
+    if (pr) chips.push(`<a class="dev-chip ${pr.state === 'OPEN' ? 'info' : pr.state === 'MERGED' ? 'brm-ok' : ''}" href="${hx(pr.url)}" target="_blank" rel="noopener">PR #${pr.number} ${BRM_PR[pr.state] || hx(pr.state)}</a>`);
+    if (r.rebasing || r.merging) chips.push(`<span class="dev-chip bad">${r.rebasing ? 'rebase' : 'fusion'} en cours</span>`);
+    const etat = {
+        todo: `<b>${r.for_base} commit${r.for_base > 1 ? 's' : ''}</b> à fusionner dans ${hx(r.base)} — `
+              + (!r.remote_branch || r.to_push ? 'pousse, puis ouvre la PR.' : pr && pr.state === 'OPEN' ? `la PR #${pr.number} attend ta fusion.` : 'ouvre la PR, puis fusionne.'),
+        done: `Tout ce travail est <b>déjà dans ${hx(r.base)}</b>. Pour la suite, crée une nouvelle branche.`
+              + (pr && pr.state === 'OPEN' ? ` La PR #${pr.number} encore ouverte peut être fermée.` : ''),
+        empty: r.modified || r.untracked ? `Tes changements ne sont <b>pas encore commités</b> : commite, pousse, puis PR vers ${hx(r.base)}.`
+                                         : `Rien encore pour ${hx(r.base)} : modifie, commite, pousse.`,
+    }[r.merge] || '';
+    const autres = r.others.length ? `<div class="brm-state" style="color:var(--text-4)">+ ${r.others.length} autre${r.others.length > 1 ? 's' : ''} branche${r.others.length > 1 ? 's' : ''} sur ce PC (liste « Branche » du dépôt)</div>` : '';
+    return `<div class="brm-box brm-br ${r.merge}" data-row="${i}" data-state="${r.merge}">
+        <div class="brm-bn">⎇ ${hx(r.branch)}</div>
+        <div class="brm-chips">${chips.join('')}</div>
+        <div class="brm-state">${etat}${r.to_pull ? ` Ta branche a avancé sur GitHub : <b>git pull</b> dans son terminal.` : ''}</div>
+        ${autres}
+        <div style="margin-top:8px">${devPreviewHtml(r)}</div>
+        <div class="brm-act">
+          <button class="btn" onclick="brmGo(${i})" title="Choisir ce dépôt dans l'onglet Développer">Ouvrir</button>
+          <button class="btn" onclick="brmSession(${i}, 'terminal')">›_ Terminal</button>
+          <button class="btn" onclick="brmSession(${i}, 'claude')" ${devState.tools.claude.ok ? '' : 'disabled'}>✦ Claude</button>
+          ${r.merge === 'done' ? `<button class="btn" onclick="this.parentNode.nextElementSibling.hidden=false;this.remove()">+ Nouvelle branche</button>` : ''}
+        </div>
+        ${r.merge === 'done' ? `<div hidden>${creer('Créer', r.modified > 0)}</div>` : ''}
+        <div class="brm-tomain">${r.merge === 'done' ? '✓ ' : '→ '}${hx(r.base)}</div></div>`;
+}
+function brmRender() {
+    if (!brmVisible()) return;
+    const body = document.getElementById('brm-body');
+    if (!devState){ body.innerHTML = '<div class="brm-wait"><span class="dev-spin"></span> Lecture des dépôts…</div>'; return; }
+    const repos = devState.repos;
+    if (!repos.length){ body.innerHTML = '<div class="brm-wait">Aucun dépôt git dans ce projet.</div>'; return; }
+    // garder ce qui est en cours de saisie
+    const saisie = {}; body.querySelectorAll('.brm-new input').forEach(x => { if (x.value) saisie[x.id] = x.value; });
+    const n = k => repos.filter(r => k(r)).length;
+    const todo = n(r => r.merge === 'todo'), done = n(r => r.merge === 'done'), none = n(r => r.on_base);
+    const base = repos.every(r => r.base === repos[0].base) ? repos[0].base : 'main';
+    body.innerHTML = `<div class="brm-wrap"><svg class="brm-svg" id="brm-svg"></svg>
+      <div class="brm-grid" style="--brm-rows:${repos.length}">
+        ${repos.map((r, i) => `
+          <div class="brm-box brm-repo" data-row="${i}" style="grid-row:${i + 1}"><b>${hx(r.name)}</b>
+            <div class="brm-dir" title="${hx(r.path)}">${r.dir === '.' ? 'racine du projet' : hx(r.dir)}</div>
+            <div class="brm-chips">${r.base_behind ? `<button class="dev-chip warn" style="border:0;cursor:pointer" onclick="brmUpdateMain(${i}, this)" title="Mettre ${hx(r.base)} à jour depuis GitHub">${hx(r.base)} : ${r.base_behind} en retard ↻</button>` : ''}</div></div>
+          ${brmBranch(r, i).replace('<div class="brm-box brm-br', `<div style="grid-row:${i + 1}" class="brm-box brm-br`)}`).join('')}
+        <div class="brm-box brm-main" id="brm-main"><b>${hx(base)}</b><div style="font-size:11px;color:var(--text-3)">GitHub · ce qui part en production</div>
+          <div class="brm-sum">${todo ? `<div style="color:var(--blue)">${todo} branche${todo > 1 ? 's' : ''} à fusionner</div>` : ''}
+            ${done ? `<div style="color:var(--emerald)">${done} déjà fusionnée${done > 1 ? 's' : ''}</div>` : ''}
+            ${none ? `<div>${none} dépôt${none > 1 ? 's' : ''} sans branche</div>` : ''}</div></div>
+      </div></div>`;
+    Object.entries(saisie).forEach(([k, v]) => { const x = document.getElementById(k); if (x) x.value = v; });
+    requestAnimationFrame(brmArrows);
+}
+function brmArrows() {
+    const svg = document.getElementById('brm-svg'), main = document.getElementById('brm-main');
+    if (!svg || !main || !main.offsetParent) { if (svg) svg.innerHTML = ''; return; }
+    const o = svg.getBoundingClientRect(), m = main.getBoundingClientRect();
+    const col = {todo: 'var(--blue)', done: 'var(--emerald)', empty: 'var(--text-3)', none: 'var(--text-4)'};
+    const pointes = {...col, violet: 'var(--violet)'};
+    let out = '<defs>' + Object.entries(pointes).map(([k, c]) => `<marker id="brm-a-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`).join('') + '</defs>';
+    const rows = document.querySelectorAll('#brm-body .brm-br');
+    rows.forEach((br, k) => {
+        const i = br.dataset.row, st = br.dataset.state;
+        const repo = document.querySelector(`#brm-body .brm-repo[data-row="${i}"]`);
+        const a = repo.getBoundingClientRect(), b = br.getBoundingClientRect();
+        const y1 = a.top + Math.min(a.height / 2, 22) - o.top, y2 = b.top + Math.min(b.height / 2, 22) - o.top;
+        const x1 = a.right - o.left, x2 = b.left - o.left - 2;
+        const dash1 = st === 'none' ? ' stroke-dasharray="5 4"' : '';
+        out += `<path d="M${x1},${y1} C${x1 + 30},${y1} ${x2 - 30},${y2} ${x2},${y2}" fill="none" stroke="${st === 'none' ? col.none : 'var(--violet)'}" stroke-width="1.8"${dash1} marker-end="url(#brm-a-${st === 'none' ? 'none' : 'violet'})"/>`;
+        const sx = b.right - o.left, sy = y2;
+        const n = rows.length, ty = m.top - o.top + m.height * (k + 1) / (n + 1), tx = m.left - o.left - 2;
+        const dash2 = (st === 'none' || st === 'empty') ? ' stroke-dasharray="5 4"' : '';
+        out += `<path d="M${sx},${sy} C${sx + 40},${sy} ${tx - 40},${ty} ${tx},${ty}" fill="none" stroke="${col[st]}" stroke-width="${st === 'todo' ? 2.4 : 1.8}"${dash2} opacity="${st === 'none' ? .6 : 1}" marker-end="url(#brm-a-${st})"/>`;
+    });
+    svg.innerHTML = out;
+}
+window.addEventListener('resize', () => { if (brmVisible()) brmArrows(); });
+
+async function brmCreate(i, btn) {
+    const r = devState.repos[i], inp = document.getElementById('brm-n-' + i), carry = document.getElementById('brm-n-' + i + '-carry');
+    const name = inp.value.trim();
+    if (!name){ inp.focus(); return; }
+    btn.disabled = true; btn.innerHTML = '<span class="dev-spin"></span>';
+    const x = await apiJson('POST', `projects/${wsProjectId}/dev/new-branch`, {repo: r.dir, name, carry: !!(carry && carry.checked)});
+    btn.disabled = false; btn.textContent = 'Créer';
+    if (!x.success){ toast(devErr(x), 'error'); return; }
+    toast(`${r.name} : branche ${x.branch} créée depuis ${x.from}`);
+    if (x.note) toast(x.note, 'info');
+    inp.value = '';
+    delete devBranches[r.path];
+    await brmLoad(false);
+}
+async function brmUpdateMain(i, btn) {
+    const r = devState.repos[i]; btn.disabled = true;
+    const x = await apiJson('POST', `projects/${wsProjectId}/dev/update-main`, {repo: r.dir});
+    if (!x.success){ btn.disabled = false; toast(devErr(x), 'error'); return; }
+    toast(`${r.name} : ${x.message}`);
+    await brmLoad(false);
+}
+function brmGo(i) { closeModals(); wsTab('dev'); devChoose(devState.repos[i].dir); }
+async function brmSession(i, kind) { const r = devState.repos[i]; closeModals(); devChoose(r.dir); await wsNewSession(kind, r.dir); }
 
 /* ── sessions (onglets du terminal) ── */
 let devSessions = [];

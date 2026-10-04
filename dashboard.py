@@ -2218,6 +2218,22 @@ def api_terminal_session_new():
     except (ValueError, P.ProjectError) as e:
         return jsonify({"success": False, "error": getattr(e, "message", str(e))}), 400
     kind = "claude" if data.get("kind") == "claude" else "terminal"
+    run = None
+    if data.get("start") and kind == "terminal":
+        # « ▶ Lancer » : the command comes from DevPilot's own detection, never from the request
+        import preview
+        st = (preview.previews(pid).get(repo) or {}).get("start")
+        if not st:
+            return jsonify({"success": False, "error": "Rien à lancer détecté pour ce dépôt (pas de dev.sh, ni npm run dev)"}), 400
+        path, run = dev_mod.project_root(pid)[1] / st["cwd"], st["cmd"]
+        data["label"] = data.get("label") or f"▶ {Path(dev_mod.repo_path(pid, repo)).name}"
+    elif data.get("logs") and kind == "terminal":
+        import preview
+        down = [x for x in (preview.previews(pid).get(repo) or {}).get("running", []) if x.get("kind") == "down" and x.get("logs")]
+        if not down:
+            return jsonify({"success": False, "error": "Aucun service en panne détecté pour ce dépôt"}), 400
+        run = down[0]["logs"]
+        data["label"] = data.get("label") or f"journaux {down[0]['name']}"
     if kind == "claude" and not dev_mod.tools()["claude"]["ok"]:
         return jsonify({"success": False, "error": f"Claude introuvable : « {dev_mod.claude_cmd()} » — Réglages"}), 400
     name = Path(path).name
@@ -2227,7 +2243,10 @@ def api_terminal_session_new():
         _term_sessions[sid] = TermSession(sid, str(path), "claude" if kind == "claude" else "", None,
                                           meta={"pid": pid, "repo": repo, "label": label, "kind": kind},
                                           size=(data.get("rows"), data.get("cols")))
-    return jsonify({"success": True, "sid": sid, "cwd": str(path), "label": label, "kind": kind})
+    if run:
+        sess = _term_sessions[sid]
+        threading.Timer(0.8, lambda: sess.alive and sess.write((run + "\r").encode())).start()
+    return jsonify({"success": True, "sid": sid, "cwd": str(path), "label": label, "kind": kind, "run": run})
 
 
 @app.route("/api/terminal/sessions/<sid>", methods=["DELETE"])

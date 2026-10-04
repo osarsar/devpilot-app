@@ -116,6 +116,7 @@ def repo_state(root, path, fetch=False):
     _, last, _ = _git(path, "log", "-1", "--format=%h\x1f%s\x1f%cI")
     sha, msg, when = (last.split("\x1f") + ["", "", ""])[:3]
     _, remote, _ = _git(path, "remote", "get-url", "origin")
+    work = _work_state(path, branch, base, ob, upstream, ahead, behind)
     rel = str(path.relative_to(root)) if path != root else "."
     return {"dir": rel, "name": path.name if path != root else root.name, "path": str(path),
             "branch": branch or "(détachée)", "base": base, "on_base": branch == base,
@@ -125,7 +126,43 @@ def repo_state(root, path, fetch=False):
             "base_behind": _n(_git(path, "rev-list", "--count", f"{base}..{ob}")[1]) if ob != base and _exists(path, f"refs/heads/{base}") else 0,
             "last": {"sha": sha, "message": msg[:100], "when": when}, "remote": remote,
             "rebasing": (path / ".git" / "rebase-merge").exists() or (path / ".git" / "rebase-apply").exists(),
-            "merging": (path / ".git" / "MERGE_HEAD").exists()}
+            "merging": (path / ".git" / "MERGE_HEAD").exists(), **work}
+
+
+def _integrated(path, ob):
+    """Is everything this branch changes already in main? (also after a squash merge: the
+    branch's commits are not in main, but merging it would change nothing)."""
+    rc, out, _ = _git(path, "merge-tree", "--write-tree", ob, "HEAD")
+    if rc != 0 or not out:
+        return False
+    return out.split()[0] == _git(path, "rev-parse", f"{ob}^{{tree}}")[1]
+
+
+def _work_state(path, branch, base, ob, upstream, ahead, behind):
+    """The work branch on the way to main (branch map):
+    pushed      : on GitHub (origin/<branch>) and nothing left to push
+    to_push     : local commits not on GitHub (all of them when the branch was never pushed)
+    to_pull     : commits on GitHub not here yet (pushed from another PC)
+    merge       : none (on main) | empty (nothing yet) | todo (commits for main) | done (already in main)
+    others      : the other local branches (not main, not this one)"""
+    _, loc, _ = _git(path, "for-each-ref", "refs/heads", "--format=%(refname:short)")
+    others = [b for b in loc.splitlines() if b and b not in (base, branch)]
+    res = {"remote_branch": False, "pushed": False, "to_push": 0, "to_pull": 0, "merge": "none", "others": others[:20]}
+    if not branch or branch == base:
+        return res
+    gh = upstream if upstream else (f"origin/{branch}" if _exists(path, f"origin/{branch}") else "")
+    if gh:
+        res["remote_branch"] = True
+        res["to_push"] = ahead if upstream else _n(_git(path, "rev-list", "--count", f"{gh}..HEAD")[1])
+        res["to_pull"] = behind if upstream else _n(_git(path, "rev-list", "--count", f"HEAD..{gh}")[1])
+        res["pushed"] = res["to_push"] == 0
+    else:
+        res["to_push"] = _n(_git(path, "rev-list", "--count", f"{ob}..HEAD")[1])
+    if _n(_git(path, "rev-list", "--count", f"{ob}..HEAD")[1]) == 0:
+        res["merge"] = "empty"
+    else:
+        res["merge"] = "done" if _integrated(path, ob) else "todo"
+    return res
 
 
 def repos(pid, fetch=False):
@@ -199,7 +236,7 @@ def valid_name(path, name):
     return _git(path, "check-ref-format", "--branch", name)[0] == 0 and not name.startswith("-")
 
 
-def new_branch(pid, repo, name, stash=False):
+def new_branch(pid, repo, name, stash=False, carry=False):
     """A new branch ALWAYS starts from the latest main on GitHub — never from wherever you happen to be."""
     path = repo_path(pid, repo)
     name = (name or "").strip()
@@ -210,10 +247,16 @@ def new_branch(pid, repo, name, stash=False):
     base = base_branch(path)
     _git(path, "fetch", "-q", "origin", base, timeout=60)
     start = f"origin/{base}" if _exists(path, f"origin/{base}") else base
-    note = _refuse_if_dirty(path, stash, f"de créer {name}")
+    # carry: the files modified (on main, by mistake) go along to the new branch
+    note = None if carry else _refuse_if_dirty(path, stash, f"de créer {name}")
     rc, _, err = _git(path, "switch", "--no-track", "-c", name, start)
     if rc != 0:
+        if carry and "overwritten" in err:
+            raise ProjectError("Tes modifications touchent des fichiers qui ont changé sur GitHub : "
+                               "coche plutôt « mettre de côté » (git stash), puis reprends-les avec git stash pop.")
         raise ProjectError("Création refusée : " + (err.splitlines()[-1] if err else "?"))
+    if carry and _dirty(path):
+        note = "tes modifications ont suivi sur la nouvelle branche"
     return {"branch": name, "from": start, "note": note}
 
 
@@ -235,6 +278,37 @@ def update_main(pid, repo):
         raise ProjectError(f"{base} n'a pas pu avancer simplement (des commits locaux sur {base} ?) : "
                            + (err.splitlines()[-1] if err else "?"))
     return {"base": base, "message": f"{base} est à jour"}
+
+
+def _gh_repo(url):
+    """git@github.com:org/repo.git | https://github.com/org/repo(.git) → org/repo"""
+    import re
+    m = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$", url or "")
+    return m.group(1) if m else ""
+
+
+def prs(pid):
+    """The pull request of each work branch, read with gh: {dir: {number, state, url}}.
+    Empty when gh is missing or not logged in — the map then simply shows no PR."""
+    if not shutil.which("gh"):
+        return {}
+    from concurrent.futures import ThreadPoolExecutor
+    import json
+    st = repos(pid)["repos"]
+
+    def one(r):
+        gh = _gh_repo(r["remote"])
+        if r["on_base"] or not gh or r["branch"].startswith("("):
+            return r["dir"], None
+        try:
+            out = subprocess.run(["gh", "pr", "list", "-R", gh, "--head", r["branch"], "--state", "all", "--limit", "1",
+                                  "--json", "number,state,url"], capture_output=True, text=True, timeout=20)
+            l = json.loads(out.stdout or "[]") if out.returncode == 0 else []
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            l = []
+        return r["dir"], (l[0] if l else None)
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        return {d: x for d, x in ex.map(one, st) if x}
 
 
 # ── tools ───────────────────────────────────────────────────────────────────
