@@ -510,6 +510,9 @@ def api_controller_clear(pid):
 
 @projects_bp.route("/api/projects/<int:pid>/controller/start", methods=["POST"])
 def api_controller_start(pid):
+    if _flag(_body().get("fresh")):
+        st, restarted = CT.open_fresh(pid)
+        return _ok(status=st, controller=CT.get(pid), restarted=restarted)
     return _ok(status=CT.start(pid), controller=CT.get(pid))
 
 

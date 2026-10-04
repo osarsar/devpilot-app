@@ -43,7 +43,8 @@ app.register_blueprint(projects_bp)
 # Only this dashboard may call the API. Without this, any website open in the
 # browser could POST to localhost:5555 or open the terminal WebSocket
 # (cross-site requests, DNS rebinding): the API runs shell commands.
-ALLOWED_HOSTS = {"127.0.0.1:5555", "localhost:5555"}
+PORT = int(os.environ.get("DEVPILOT_PORT") or 5555)      # 5555 ; un autre port pour les tests (rien à arrêter)
+ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 
 
 @app.after_request
@@ -2863,7 +2864,7 @@ def api_apply_profile(pid):
 
 if __name__ == "__main__":
     import webbrowser, threading
-    port = 5555
+    port = PORT
     print(f"\n  DevPilot -> http://localhost:{port}\n")
     # Open browser on launch (desktop shortcut or terminal)
     if not os.environ.get("DEVPILOT_NO_BROWSER"):
