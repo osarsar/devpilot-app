@@ -25,6 +25,7 @@ import components as comp
 from cloud_routes import cloud_bp
 import projects as P
 import servers
+import dev as dev_mod
 import ports as ports_mod
 import sizes
 import model as M
@@ -1831,8 +1832,9 @@ _term_lock = threading.Lock()
 
 
 class TermSession:
-    def __init__(self, sid, cwd, mode, argv=None):
+    def __init__(self, sid, cwd, mode, argv=None, meta=None):
         self.sid, self.cwd, self.mode = sid, cwd, mode
+        self.meta = meta or {}                 # pid, repo, label, kind (terminal | claude | ssh | import…)
         self.buffer = bytearray()
         self.clients = set()
         self.lock = threading.Lock()
@@ -1851,6 +1853,9 @@ class TermSession:
             argv = ["bash", "--rcfile", str(IMPORT_RC), "-i"]
         elif mode == "ssh" and argv:
             pass                                   # ssh to a project's server (servers.terminal_argv)
+        elif mode == "claude":
+            # Claude in this folder; when it ends the shell stays, in the same place
+            argv = ["bash", "-lc", f"{dev_mod.claude_cmd()}; exec bash --login"]
         else:
             argv = ["bash", "--login"]
 
@@ -2063,13 +2068,84 @@ def terminal_ws(ws):
             session.kill()
 
 
+def _session_info(s, projects_by_path):
+    """What a session is, for humans: which project, which repo, which branch."""
+    pid = s.meta.get("pid")
+    proj = None
+    if pid is None:
+        for root, p in projects_by_path:
+            if s.cwd == root or s.cwd.startswith(root + os.sep):
+                proj = p
+                break
+    else:
+        proj = next((p for _, p in projects_by_path if p["id"] == pid), None)
+    repo = s.meta.get("repo")
+    if repo is None and proj:
+        rel = os.path.relpath(s.cwd, proj["_root"])
+        repo = "." if rel == "." else rel
+    br = ""
+    if os.path.isdir(os.path.join(s.cwd, ".git")) or os.path.isdir(s.cwd):
+        try:
+            br = subprocess.run(["git", "-C", s.cwd, "branch", "--show-current"], capture_output=True,
+                                text=True, timeout=3).stdout.strip()
+        except Exception:
+            br = ""
+    kind = s.meta.get("kind") or {"claude": "claude", "ssh": "ssh", "import": "import", "link": "import"}.get(s.mode, "terminal")
+    if s.sid.startswith("proj-"):
+        kind, label = "terminal", "Terminal du projet"
+    else:
+        label = s.meta.get("label") or {"claude": "Claude", "ssh": "SSH", "import": "Import"}.get(kind, "Terminal")
+    return {"sid": s.sid, "cwd": s.cwd, "mode": s.mode, "kind": kind, "label": label, "created": s.created,
+            "clients": len(s.clients), "pid": proj["id"] if proj else None, "project": proj["name"] if proj else None,
+            "repo": repo, "branch": br}
+
+
+def _projects_by_path():
+    out = []
+    for p in P.all_projects():
+        try:
+            root = str(Path(p["path"]).expanduser().resolve()) if p.get("path") else None
+        except OSError:
+            root = None
+        if root:
+            out.append((root, {**p, "_root": root}))
+    return sorted(out, key=lambda x: -len(x[0]))         # the deepest project wins
+
+
 @app.route("/api/terminal/sessions")
 def api_terminal_sessions():
+    """Live sessions — all of them, or ?pid=<project> — with project, repo and branch."""
     with _term_lock:
-        items = [{"sid": s.sid, "cwd": s.cwd, "mode": s.mode, "created": s.created,
-                  "clients": len(s.clients)}
-                 for s in _term_sessions.values() if s.alive]
-    return jsonify(items)
+        live = [s for s in _term_sessions.values() if s.alive and not s.sid.startswith("tmp-")]
+    bp = _projects_by_path()
+    items = [_session_info(s, bp) for s in live]
+    pid = request.args.get("pid")
+    if pid:
+        items = [i for i in items if str(i["pid"]) == str(pid)]
+    return jsonify(sorted(items, key=lambda i: i["created"]))
+
+
+@app.route("/api/terminal/sessions", methods=["POST"])
+def api_terminal_session_new():
+    """A new session IN a repo of a project: {pid, repo, kind: terminal|claude, label?}."""
+    data = request.json or {}
+    try:
+        pid = int(data.get("pid") or 0)
+        repo = data.get("repo") or "."
+        path = dev_mod.repo_path(pid, repo) if repo != "." or (dev_mod.project_root(pid)[1] / ".git").exists() \
+            else dev_mod.project_root(pid)[1]
+    except (ValueError, P.ProjectError) as e:
+        return jsonify({"success": False, "error": getattr(e, "message", str(e))}), 400
+    kind = "claude" if data.get("kind") == "claude" else "terminal"
+    if kind == "claude" and not dev_mod.tools()["claude"]["ok"]:
+        return jsonify({"success": False, "error": f"Claude introuvable : « {dev_mod.claude_cmd()} » — Réglages"}), 400
+    name = Path(path).name
+    label = (data.get("label") or "").strip()[:40] or (f"Claude · {name}" if kind == "claude" else name)
+    sid = f"dev-{pid}-{time.time_ns() % 10**10}"
+    with _term_lock:
+        _term_sessions[sid] = TermSession(sid, str(path), "claude" if kind == "claude" else "", None,
+                                          meta={"pid": pid, "repo": repo, "label": label, "kind": kind})
+    return jsonify({"success": True, "sid": sid, "cwd": str(path), "label": label, "kind": kind})
 
 
 @app.route("/api/terminal/sessions/<sid>", methods=["DELETE"])
