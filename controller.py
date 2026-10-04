@@ -425,6 +425,18 @@ def _same_dir(a, b):
         return False
 
 
+def open_fresh(pid, wait=20):
+    """What the « Console » button does: the console, RUNNING THE CURRENT CODE.
+    Not running → started. Running an old version (code changed since: git pull,
+    merge, edit) → restarted, otherwise the button opens the old one — or a
+    broken page if the change was half-done. Returns (status, restarted)."""
+    project = _root(pid)
+    st = status(_controller(pid), Path(project["path"]))
+    if st["running"] and st["stale"]:
+        return restart(pid, wait=wait), True
+    return start(pid, wait=wait), False
+
+
 def restart(pid, wait=20):
     """Stop then start: the console loads the current code (after a git pull, an edit...)."""
     stop(pid)

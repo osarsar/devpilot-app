@@ -335,3 +335,20 @@ def test_restart_loads_new_code_and_flags_stale(P, C, home, site):
     st = C.restart(pid)
     assert st["running"] and st["pid"] != first and C.get(pid)["status"]["stale"] is False
     C.stop(pid)
+
+
+def test_bouton_console_relance_une_ancienne_version(P, C, home, site):
+    """Le bouton « Console » : à jour → ouverte telle quelle ; code changé depuis (git pull,
+    fusion) → relancée avec le code actuel, sinon on ouvrait l'ancienne (ou une page cassée)."""
+    import time, os
+    pid, d, port = site
+    st, relancee = C.open_fresh(pid)                     # arrêtée → lancée
+    first = st["pid"]
+    assert st["running"] and not relancee
+    st, relancee = C.open_fresh(pid)                     # à jour → rien ne bouge
+    assert st["pid"] == first and not relancee
+    time.sleep(1.1)
+    (d / "console" / "nouveau.py").write_text("# fusion\n"); os.utime(d / "console" / "nouveau.py", None)
+    st, relancee = C.open_fresh(pid)                     # ancienne version → relancée
+    assert relancee and st["running"] and st["pid"] != first and C.get(pid)["status"]["stale"] is False
+    C.stop(pid)

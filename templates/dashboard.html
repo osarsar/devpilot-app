@@ -5692,14 +5692,21 @@ function renderCtrlButton(ctrl) {
     if (!ctrl) { btn.style.display = 'none'; return; }
     btn.style.display = '';
     btn.innerHTML = ctrlDot(ctrl.status) + 'Console ' + hx(ctrl.name || '') + (ctrl.status && ctrl.status.stale ? ' <span class="badge badge-amber" style="font-size:9px">ancienne version</span>' : '');
-    btn.title = (ctrl.status && ctrl.status.running ? 'Ouvrir ' : 'Lancer et ouvrir ') + (ctrl.url || '');
+    btn.title = (ctrl.status && ctrl.status.stale ? 'Le code a changé : un clic la relance avec le code actuel, puis l\'ouvre — '
+                 : ctrl.status && ctrl.status.running ? 'Ouvrir ' : 'Lancer et ouvrir ') + (ctrl.url || '');
 }
 
 async function launchProjectConsole(pid) {
-    toast('Console : lancement...', 'info');
-    const r = await apiJson('POST', 'projects/' + pid + '/controller/start');
-    if (!r.success) return toast(r.message, 'error');
-    window.open(r.status.url, '_blank');
+    // L'onglet s'ouvre DANS le clic : ouvert après l'attente (lancement, relance),
+    // le navigateur le bloque comme une fenêtre surgissante — « le lien n'ouvre plus ».
+    const w = window.open('about:blank', '_blank');
+    try { w && w.document.write('<body style="font:15px system-ui;background:#0b0b10;color:#c8c8d4;padding:40px">Console : lancement…</body>'); } catch (e) {}
+    toast('Console : ouverture...', 'info');
+    // fresh : si elle tourne une ANCIENNE version (code changé depuis), elle est relancée avec le code actuel
+    const r = await apiJson('POST', 'projects/' + pid + '/controller/start', {fresh: true});
+    if (!r.success) { if (w) w.close(); return toast(r.message, 'error'); }
+    if (r.restarted) toast('Console relancée avec le code actuel (elle tournait une ancienne version)');
+    if (w && !w.closed) w.location.href = r.status.url; else window.open(r.status.url, '_blank');
     if (currentPage === 'workspace' && wsProjectId === pid) { renderCtrlButton(r.controller); loadWsController(); loadWsRunning(); }
 }
 
