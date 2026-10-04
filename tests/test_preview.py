@@ -91,3 +91,57 @@ def test_lancer_tape_la_commande_detectee(P, PV, proj, monkeypatch):
     (root / "landing" / "package.json").unlink()
     r = c.post("/api/terminal/sessions", json={"pid": pid, "repo": "landing", "start": True, "run": "rm -rf ~"}).get_json()
     assert not r["success"]
+
+
+def _port():
+    s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
+
+
+def test_page_api_ou_en_panne(PV, tmp_path):
+    import json, threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Api(BaseHTTPRequestHandler):
+        def do_GET(self):
+            code, body, ct = (200, b"<html>docs</html>", "text/html") if self.path == "/docs" else (404, b'{"detail":"Not Found"}', "application/json")
+            self.send_response(code); self.send_header("Content-Type", ct); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *a): pass
+
+    class Page(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(b"<html></html>")
+        def log_message(self, *a): pass
+
+    serveurs = [HTTPServer(("127.0.0.1", 0), h) for h in (Page, Api)]
+    for srv in serveurs:
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+    mort = socket.socket(); mort.bind(("127.0.0.1", 0)); mort.listen(5)        # port ouvert, personne ne répond
+    try:
+        page, api = (x.server_address[1] for x in serveurs)
+        assert PV.probe(page) == {"kind": "page"}
+        assert PV.probe(api) == {"kind": "api", "docs": f"http://localhost:{api}/docs"}
+        assert PV.probe(mort.getsockname()[1]) == {"kind": "down"}
+        assert PV.probe(_port()) == {"kind": "down"}                             # fermé
+    finally:
+        for srv in serveurs:
+            srv.shutdown()
+        mort.close()
+
+
+def test_journaux_du_service_en_panne(P, PV, proj, monkeypatch):
+    pid, root = proj
+    import sizes, project_routes, cloud_routes, dashboard
+    for m in (sizes, project_routes, cloud_routes, dashboard):
+        importlib.reload(m)
+    dashboard.app.config.update(TESTING=True, SERVER_NAME="127.0.0.1:5555")
+    be = (root / "infra" / "services" / "backend").resolve()
+    monkeypatch.setattr(PV, "containers", lambda: [{"name": "x-backend-1", "service": "backend", "ports": [_port()], "mounts": [be]}])
+    v = PV.previews(pid)["infra/services/backend"]["running"][0]
+    assert v["kind"] == "down" and v["logs"] == "docker logs --tail 50 x-backend-1"
+    c = dashboard.app.test_client()
+    r = c.post("/api/terminal/sessions", json={"pid": pid, "repo": "infra/services/backend", "logs": True}).get_json()
+    try:
+        assert r["success"] and r["run"] == "docker logs --tail 50 x-backend-1" and r["label"] == "journaux backend"
+    finally:
+        dashboard._term_sessions[r["sid"]].kill()
+    assert not c.post("/api/terminal/sessions", json={"pid": pid, "repo": "landing", "logs": True}).get_json()["success"]

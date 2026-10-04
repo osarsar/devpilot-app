@@ -55,6 +55,29 @@ def containers():
     return out
 
 
+def _get(url, timeout=1.5):
+    import urllib.request, urllib.error
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method="GET"), timeout=timeout) as r:
+            return r.status, r.headers.get("Content-Type", "")
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers.get("Content-Type", "") if e.headers else ""
+    except Exception:
+        return 0, ""
+
+
+def probe(port):
+    """What answers on this port: page (a web page to open) | api (JSON: used BY the site, with
+    its /docs when it has one) | down (the port is open but nothing answers: starting, or crashed)."""
+    code, ctype = _get(f"http://127.0.0.1:{port}/")
+    if code and code < 400 and "text/html" in ctype:
+        return {"kind": "page"}
+    if not code:
+        return {"kind": "down"}
+    dcode, dtype = _get(f"http://127.0.0.1:{port}/docs")
+    return {"kind": "api", "docs": f"http://localhost:{port}/docs" if dcode == 200 and "text/html" in dtype else None}
+
+
 def _owner(path, repo_paths):
     """The deepest repo that contains this path (md-backend, not md_infra that holds it)."""
     best = None
@@ -117,7 +140,8 @@ def previews(pid):
                 if (o, port) not in seen:
                     seen.add((o, port))
                     res[o]["running"].append({"port": port, "url": f"http://localhost:{port}", "via": "docker",
-                                              "name": c["service"] or c["name"]})
+                                              "name": c["service"] or c["name"],
+                                              "logs": f"docker logs --tail 50 {c['name']}"})
             break
     own = os.getpid()
     for l in ports.listening():
@@ -132,10 +156,16 @@ def previews(pid):
         seen.add((o, l["port"]))
         res[o]["running"].append({"port": l["port"], "url": f"http://localhost:{l['port']}", "via": "process",
                                   "name": l["name"]})
+    from concurrent.futures import ThreadPoolExecutor
+    tous = [x for r in res.values() for x in r["running"]]
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        for x, pr in zip(tous, ex.map(lambda x: probe(x["port"]), tous)):
+            x.update(pr)
+    rang = {"page": 0, "down": 1, "api": 2}
     out = {}
     for p in repo_paths:
         r = res[p]
-        r["running"].sort(key=lambda x: x["port"])
+        r["running"].sort(key=lambda x: (rang[x["kind"]], x["port"]))      # la page à ouvrir d'abord
         if not r["running"]:
             r["start"] = _start_cmd(p, root, repo_paths)
         out[str(p.relative_to(root)) if p != root else "."] = r

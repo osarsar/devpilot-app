@@ -1307,6 +1307,10 @@ select.form-input { cursor: pointer; }
 .dev-off{font-size:11.5px;color:var(--text-3);line-height:1.6}
 .dev-off code{font-size:11px;color:var(--text-1)}
 .dev-chip.live{color:var(--emerald);background:var(--emerald-dim)}
+.dev-api{font-size:11px;color:var(--text-3);text-decoration:none;border:1px solid var(--border-2);border-radius:6px;padding:3px 8px;font-family:'JetBrains Mono',monospace}
+.dev-down{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--rose);border:1px solid rgba(244,63,94,.35);background:var(--rose-dim);border-radius:7px;padding:4px 10px}
+.dev-down small{font-weight:500;opacity:.8}
+.dev-api:hover{color:var(--text-1);border-color:var(--text-4)}
 /* ── carte des branches : dépôt → branche de travail → main ── */
 #brm-modal{width:min(1180px,96vw);min-width:0;max-height:92vh;padding:20px 22px}
 .brm-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
@@ -5058,7 +5062,11 @@ function devRepoRow(r) {
     if (r.ahead) chips.push(`<span class="dev-chip info" title="commits pas encore poussés sur GitHub">${r.ahead} à pousser</span>`);
     if (r.rebasing || r.merging) chips.push(`<span class="dev-chip bad">${r.rebasing ? 'rebase' : 'fusion'} en cours</span>`);
     const pv = devPrev(r.dir);
-    if (pv && pv.running.length) chips.push(`<span class="dev-chip live" title="tourne sur ce PC">● ${pv.running.map(x => ':' + x.port).join(' ')}</span>`);
+    if (pv && pv.running.length) {
+        const pg_ = pv.running.filter(x => x.kind === 'page'), ap = pv.running.filter(x => x.kind === 'api').length;
+        if (pv.running.some(x => x.kind === 'down')) chips.push(`<span class="dev-chip bad" title="le port est ouvert mais rien ne répond">● ne répond pas</span>`);
+        else chips.push(`<span class="dev-chip live" title="tourne sur ce PC">● ${pg_.length ? pg_.map(x => ':' + x.port).join(' ') : 'API'}${pg_.length && ap ? ` <span style="opacity:.6">+${ap} API</span>` : ''}</span>`);
+    }
     const sel = r.dir === wsDevRepo ? ' on' : '';
     return `<button class="dev-repo${sel}" onclick="devChoose('${hx(r.dir)}')" title="${hx(r.path)}">
         <span class="dev-rn">${hx(r.name)}</span>
@@ -5188,12 +5196,29 @@ function devPrev(dir) { return devPreviews[dir] || null; }
 function devPreviewHtml(r) {
     const pv = devPrev(r.dir);
     if (!pv) return '<div class="dev-off"><span class="dev-spin"></span> recherche…</div>';
-    if (pv.running.length) return `<div class="dev-prev">${pv.running.map(x =>
-        `<a class="dev-live" href="${hx(x.url)}" target="_blank" rel="noopener" title="Ouvrir dans un nouvel onglet — ${x.via === 'docker' ? 'conteneur ' : 'processus '}${hx(x.name)}">localhost:${x.port} <small>${hx(x.name)} ↗</small></a>`).join('')}</div>`;
+    if (pv.running.length) {
+        const pages = pv.running.filter(x => x.kind === 'page'), apis = pv.running.filter(x => x.kind === 'api'),
+              morts = pv.running.filter(x => x.kind === 'down');
+        const d = x => (x.via === 'docker' ? 'conteneur ' : 'processus ') + x.name;
+        return `<div class="dev-prev">${pages.map(x =>
+            `<a class="dev-live" href="${hx(x.url)}" target="_blank" rel="noopener" title="La page à ouvrir — ${hx(d(x))}">localhost:${x.port} <small>ouvrir ↗</small></a>`).join('')}
+          ${morts.map(x => `<span class="dev-down" title="Le port est ouvert mais rien ne répond : le service démarre encore, ou il a planté.">localhost:${x.port} <small>ne répond pas</small></span>`).join('')}
+          ${apis.map(x => `<a class="dev-api" href="${hx(x.docs || x.url)}" target="_blank" rel="noopener"
+              title="API (JSON) utilisée par ${pages.length ? 'la page' : 'les autres services'} — pas une page à ouvrir. ${x.docs ? 'Lien : sa documentation /docs' : ''} — ${hx(d(x))}">API :${x.port}${x.docs ? ' · docs' : ''}</a>`).join('')}</div>
+          ${morts.length ? `<div class="dev-off" style="color:var(--rose)">Pour voir pourquoi : <code>${hx(morts[0].logs || './dev.sh logs')}</code>
+              <button class="btn btn-xs" onclick="devLogs('${hx(r.dir)}')">Voir les journaux</button></div>` : ''}`;
+    }
     if (pv.start) return `<div class="dev-off">Pas lancé sur ce PC.
         <button class="btn btn-xs btn-primary" onclick="devStart('${hx(r.dir)}', this)">▶ Lancer</button>
         <code>${hx(pv.start.cmd)}</code> dans <code>${hx(pv.start.cwd)}</code> <span style="color:var(--text-4)">(${hx(pv.start.why)})</span></div>`;
     return '<div class="dev-off">Rien ne tourne pour ce dépôt, et aucune commande de lancement trouvée (dev.sh, npm run dev).</div>';
+}
+async function devLogs(dir) {
+    // the logs of the service that does not answer, in a terminal (the command comes from DevPilot's detection)
+    const pid = wsProjectId;
+    const x = await apiJson('POST', 'terminal/sessions', {pid, repo: dir, logs: true, rows: xterm && xterm.rows, cols: xterm && xterm.cols});
+    if (!x.success){ toast(devErr(x), 'error'); return; }
+    closeModals(); await loadTermTabs(); wsAttach(x.sid);
 }
 async function devStart(dir, btn) {
     const pid = wsProjectId;

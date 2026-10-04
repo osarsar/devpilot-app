@@ -2227,6 +2227,13 @@ def api_terminal_session_new():
             return jsonify({"success": False, "error": "Rien à lancer détecté pour ce dépôt (pas de dev.sh, ni npm run dev)"}), 400
         path, run = dev_mod.project_root(pid)[1] / st["cwd"], st["cmd"]
         data["label"] = data.get("label") or f"▶ {Path(dev_mod.repo_path(pid, repo)).name}"
+    elif data.get("logs") and kind == "terminal":
+        import preview
+        down = [x for x in (preview.previews(pid).get(repo) or {}).get("running", []) if x.get("kind") == "down" and x.get("logs")]
+        if not down:
+            return jsonify({"success": False, "error": "Aucun service en panne détecté pour ce dépôt"}), 400
+        run = down[0]["logs"]
+        data["label"] = data.get("label") or f"journaux {down[0]['name']}"
     if kind == "claude" and not dev_mod.tools()["claude"]["ok"]:
         return jsonify({"success": False, "error": f"Claude introuvable : « {dev_mod.claude_cmd()} » — Réglages"}), 400
     name = Path(path).name
