@@ -55,10 +55,11 @@ def monde(tmp_path, monkeypatch):
     for k, v in {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}.items():
         monkeypatch.setenv(k, v)
     src = tmp_path / "src"; src.mkdir()
-    for f in ("publish.sh", "update.sh"):
+    for f in ("publish.sh", "update.sh", "pc.sh"):
         shutil.copy(APP / f, src / f)
     (src / "requirements.txt").write_text("")
     (src / "page.py").write_text("TITRE = 'v1'\n")
+    (src / "dashboard.py").write_text("")
     (src / "launch.sh").write_text("#!/bin/bash\nexit 0\n"); (src / "launch.sh").chmod(0o755)
     (src / ".gitignore").write_text(".venv\n")
     git(src, "init", "-q", "-b", "main"); git(src, "add", "-A"); git(src, "commit", "-qm", "init")
@@ -168,3 +169,45 @@ def test_tests_en_echec_rien_envoye(monde):
     (a["dir"] / "tests" / "test_x.py").write_text("def test_casse():\n    assert False\n")
     rc, out = monde["run"](a, "publish.sh", "cassé", "--sans-redemarrer")
     assert rc != 0 and "tests en échec" in out and git(monde["nu"], "rev-parse", "main") == avant
+
+
+
+# ── l'assistant « devpilot pc » ─────────────────────────────────────────────
+
+def assistant(m, p, reponses, app=None):
+    env = dict(p["env"], DEVPILOT_APP=str(app or p["dir"]))
+    r = subprocess.run(["bash", str(APP / "pc.sh")], input=reponses, env=env, capture_output=True, text=True, timeout=180)
+    return r.stdout + r.stderr
+
+
+def test_assistant_pc_non_installe(monde):
+    a = monde["pc"]("pc-a")
+    out = assistant(monde, a, "n\n", app=monde["tmp"] / "rien")
+    assert "n'est pas installé" in out and "Installer DevPilot" in out
+
+
+def test_assistant_ancienne_installation_mise_a_niveau(monde):
+    a = monde["pc"]("pc-a")                         # aucun lanceur « devpilot » complet sur ce PC
+    out = assistant(monde, a, "\n")                 # Entrée = mode recommandé
+    assert "ancienne installation" in out and "1) Première mise à niveau (ancienne installation)   ← recommandé" in out
+    lanceur = Path(a["env"]["HOME"]) / ".local" / "bin" / "devpilot"
+    assert "publish" in lanceur.read_text() and "pc|assistant" in lanceur.read_text()
+
+
+def test_assistant_recommande_mettre_a_jour_puis_le_fait(monde):
+    a, b = monde["pc"]("pc-a"), monde["pc"]("pc-b")
+    for p in (a, b):
+        monde["run"](p, "update.sh", "--sans-redemarrer")       # installations à jour
+    (a["dir"] / "page.py").write_text("TITRE = 'v2'\n")
+    assert monde["run"](a, "publish.sh", "v2", "--sans-tests", "--sans-redemarrer")[0] == 0
+    out = assistant(monde, b, "\n")
+    assert "1 nouveauté(s) sur GitHub" in out and "2) Mettre à jour (récupérer ce qui a été publié)   ← recommandé" in out
+    assert (b["dir"] / "page.py").read_text() == "TITRE = 'v2'\n"
+
+
+def test_assistant_recommande_publier(monde):
+    a = monde["pc"]("pc-a")
+    monde["run"](a, "update.sh", "--sans-redemarrer")
+    (a["dir"] / "page.py").write_text("TITRE = 'local'\n")
+    out = assistant(monde, a, "q\n")
+    assert "modifié(s) ici, pas encore publiés" in out and "3) Publier mes modifications (pour les autres PC)   ← recommandé" in out

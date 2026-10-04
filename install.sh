@@ -43,11 +43,13 @@ APP_DIR="$HOME/devpilot/.devpilot/app"
 case "${1:-}" in
   update|maj)        shift; exec "$APP_DIR/update.sh" "$@" ;;
   publish|publier)   shift; exec "$APP_DIR/publish.sh" "$@" ;;
+  pc|assistant)      shift; exec "$APP_DIR/pc.sh" "$@" ;;
   version)           git -C "$APP_DIR" fetch -q origin main 2>/dev/null
                      echo "ce PC   : $(git -C "$APP_DIR" log -1 --format='%h %s (%cr)')"
                      echo "GitHub  : $(git -C "$APP_DIR" log -1 --format='%h %s (%cr)' origin/main)"
                      exit 0 ;;
   help|-h|--help)    echo "devpilot                 lancer DevPilot"
+                     echo "devpilot pc              l'assistant : il dit quoi faire sur ce PC et le fait"
                      echo "devpilot publish \"msg\"   publier mes modifications (tests, PR, fusion) pour tous les PC"
                      echo "devpilot update          récupérer la dernière version publiée"
                      echo "devpilot version         ce PC comparé à GitHub"; exit 0 ;;
