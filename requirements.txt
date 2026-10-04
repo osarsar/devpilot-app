@@ -1,0 +1,10 @@
+flask
+flask-sock
+psutil
+watchdog
+boto3
+requests
+jinja2
+rich
+weasyprint
+paramiko

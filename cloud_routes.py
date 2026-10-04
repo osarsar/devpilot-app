@@ -10,6 +10,7 @@ import db
 import github_ops
 import cloudflare_r2
 import cloud_sync
+import projects as P
 
 cloud_bp = Blueprint("cloud", __name__)
 HOME = Path.home()
@@ -79,46 +80,6 @@ def api_github_commits(owner, repo):
     branch = request.args.get("branch", "main")
     limit = request.args.get("limit", 20, type=int)
     return jsonify(github_ops.github_list_commits(token, owner, repo, branch, limit))
-
-
-@cloud_bp.route("/api/github/clone", methods=["POST"])
-def api_github_clone():
-    """Clone a GitHub repo using stored token for private repos."""
-    token = db.get_setting("github_token", "")
-    repo_url = request.json.get("url", "").strip()
-    name = request.json.get("name", "").strip()
-
-    if not repo_url:
-        return jsonify({"success": False, "message": "URL requise"})
-
-    if not name:
-        name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-
-    clone_path = str(DEVPILOT_PROJECTS / name)
-    if os.path.exists(clone_path):
-        return jsonify({"success": False, "message": f"Le dossier {name} existe deja"})
-
-    ok, output = github_ops.git_clone(repo_url, clone_path, token)
-
-    if not ok or not os.path.exists(clone_path):
-        return jsonify({"success": False, "message": f"Clone echoue: {output}"})
-
-    # Detect color
-    tech_colors = {
-        "package.json": "#fbbf24", "pubspec.yaml": "#38bdf8",
-        "requirements.txt": "#34d399", "pyproject.toml": "#34d399",
-        "build.gradle": "#06b6d4", "Cargo.toml": "#fb923c", "go.mod": "#60a5fa",
-    }
-    color = "#8b5cf6"
-    for mf, c in tech_colors.items():
-        if (Path(clone_path) / mf).exists():
-            color = c
-            break
-
-    pid = db.create_project(name=name, color=color, path=clone_path, git_remote=repo_url, description="")
-    db.add_rule(pattern=re.escape(name.lower()), project_id=pid, resource_type="any")
-
-    return jsonify({"success": True, "message": f"{name} clone", "path": clone_path, "project_id": pid})
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -977,7 +938,7 @@ def api_get_connections(pid):
     backup_cfg = _parse_cfg(comps.get("backup"))
     backup_bucket = backup_cfg.get("bucket", "") or wd.get("backup_bucket", "")
     backup_freq = backup_cfg.get("frequency", "") or wd.get("backup_freq", "")
-    last_backup = db.get_last_sync(pid, "r2", "push")
+    last_backup = db.get_last_sync(pid, "r2", "backup") or db.get_last_sync(pid, "r2", "push")
 
     if comps.get("backup") or wd.get("needs_backup") == "yes":
         if last_backup:
@@ -1074,8 +1035,8 @@ def api_update_connection(pid):
     if not project:
         return jsonify({"success": False, "message": "Projet introuvable"}), 404
 
-    # Strip masked values — don't overwrite real secrets with "****"
-    config = {k: v for k, v in config.items() if v and not str(v).startswith("****")}
+    # Masked secrets ("****") are never written back; False / "" are kept: they clear a value
+    config = {k: v for k, v in config.items() if not (isinstance(v, str) and v.startswith("****"))}
 
     # Map connection type to component key
     comp_key = conn_type
@@ -1084,76 +1045,12 @@ def api_update_connection(pid):
         comp_key = "git"
         repo_url = config.get("url", "")
         if repo_url:
-            db.update_project(pid, git_remote=repo_url)
-
-            # Auto git setup in project directory
-            ppath = project.get("path", "")
-            if ppath and os.path.isdir(ppath):
-                import subprocess
-                git_dir = os.path.join(ppath, ".git")
-                # Check if folder is empty (only .devpilot and CLAUDE.md)
-                contents = [f for f in os.listdir(ppath) if f not in (".devpilot", "CLAUDE.md", ".claude")]
-                is_empty = len(contents) == 0
-
-                if is_empty and not os.path.isdir(git_dir):
-                    # Empty folder → clone into it
-                    # Clone to temp, then move contents
-                    import tempfile, shutil
-                    tmp = tempfile.mkdtemp()
-                    try:
-                        # Use token if available for private repos
-                        clone_url = repo_url
-                        token = db.get_setting("github_token", "")
-                        if token and "github.com" in repo_url and repo_url.startswith("https://"):
-                            clone_url = repo_url.replace("https://", f"https://{token}@")
-                        r = subprocess.run(["git", "clone", clone_url, tmp + "/repo"],
-                                           capture_output=True, text=True, timeout=120)
-                        if r.returncode == 0 and os.path.isdir(tmp + "/repo"):
-                            # Reset remote to clean URL (without token)
-                            subprocess.run(["git", "-C", tmp + "/repo", "remote", "set-url", "origin", repo_url],
-                                           capture_output=True, timeout=5)
-                            # Move all cloned files into project path
-                            for item in os.listdir(tmp + "/repo"):
-                                src = os.path.join(tmp + "/repo", item)
-                                dst = os.path.join(ppath, item)
-                                if os.path.exists(dst):
-                                    if os.path.isdir(dst):
-                                        shutil.rmtree(dst)
-                                    else:
-                                        os.remove(dst)
-                                shutil.move(src, dst)
-                            git_result = {"action": "cloned", "message": f"Repo clone dans {ppath}"}
-                        else:
-                            git_result = {"action": "clone_failed", "message": r.stderr.strip()[:200]}
-                    except Exception as e:
-                        git_result = {"action": "clone_failed", "message": str(e)[:200]}
-                    finally:
-                        shutil.rmtree(tmp, ignore_errors=True)
-
-                elif not os.path.isdir(git_dir):
-                    # Folder has files but no git → init + remote + pull
-                    subprocess.run(["git", "-C", ppath, "init"], capture_output=True, timeout=10)
-                    subprocess.run(["git", "-C", ppath, "remote", "add", "origin", repo_url],
-                                   capture_output=True, timeout=10)
-                    r = subprocess.run(["git", "-C", ppath, "pull", "origin", "main", "--allow-unrelated-histories"],
-                                       capture_output=True, text=True, timeout=60)
-                    if r.returncode != 0:
-                        # Try master branch
-                        subprocess.run(["git", "-C", ppath, "pull", "origin", "master", "--allow-unrelated-histories"],
-                                       capture_output=True, timeout=60)
-                    git_result = {"action": "linked", "message": f"Git init + remote add + pull dans {ppath}"}
-
-                else:
-                    # Already a git repo → just update remote
-                    existing_remote = subprocess.run(["git", "-C", ppath, "remote", "get-url", "origin"],
-                                                     capture_output=True, text=True, timeout=5).stdout.strip()
-                    if existing_remote:
-                        subprocess.run(["git", "-C", ppath, "remote", "set-url", "origin", repo_url],
-                                       capture_output=True, timeout=5)
-                    else:
-                        subprocess.run(["git", "-C", ppath, "remote", "add", "origin", repo_url],
-                                       capture_output=True, timeout=5)
-                    git_result = {"action": "updated", "message": "Remote origin mis a jour"}
+            try:
+                token = db.get_setting("github_token", "") if repo_url.startswith("https://github.com/") else ""
+                git_result = P.link_git(pid, repo_url, token=token)
+            except P.ProjectError as e:
+                db.update_project(pid, git_remote=repo_url)
+                git_result = {"action": "link_failed", "message": e.message}
 
     # Merge into existing component config
     existing = db.get_project_component(pid, comp_key)
@@ -1166,6 +1063,12 @@ def api_update_connection(pid):
         db.update_project_component(pid, comp_key, config=merged, enabled=True)
     else:
         db.add_project_component(pid, comp_key, enabled=True, config=config)
+
+    try:
+        import connections as _C
+        _C.mirror(pid)
+    except Exception:
+        pass
 
     # Regenerate CLAUDE.md so Claude sees the new connection
     ppath = project.get("path", "")

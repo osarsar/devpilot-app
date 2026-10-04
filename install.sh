@@ -39,13 +39,13 @@ echo "  [3/6] Creation des commandes CLI..."
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/devpilot" << 'SCRIPT'
 #!/bin/bash
-cd "$HOME/devpilot/.devpilot/app" && python3 dashboard.py "$@"
+cd "$HOME/devpilot/.devpilot/app" && exec .venv/bin/python dashboard.py "$@"
 SCRIPT
 chmod +x "$HOME/.local/bin/devpilot"
 
 cat > "$HOME/.local/bin/devpilot-watcher" << 'SCRIPT'
 #!/bin/bash
-cd "$HOME/devpilot/.devpilot/app" && python3 watcher.py "$@"
+cd "$HOME/devpilot/.devpilot/app" && exec .venv/bin/python watcher.py "$@"
 SCRIPT
 chmod +x "$HOME/.local/bin/devpilot-watcher"
 
@@ -56,7 +56,8 @@ fi
 
 # Python deps
 echo "  [4/6] Installation des dependances Python..."
-pip install flask flask-sock psutil watchdog --break-system-packages -q 2>/dev/null || pip install flask flask-sock psutil watchdog -q 2>/dev/null
+python3 -m venv "$APP_DIR/.venv"
+"$APP_DIR/.venv/bin/pip" install -q -r "$APP_DIR/requirements.txt"
 
 # Systemd watcher service
 echo "  [5/6] Configuration du service watcher..."
@@ -68,7 +69,7 @@ After=network.target docker.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 $APP_DIR/watcher.py
+ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/watcher.py
 WorkingDirectory=$APP_DIR
 Restart=on-failure
 RestartSec=5
@@ -85,7 +86,7 @@ systemctl --user restart devpilot-watcher.service
 # Initialize database
 echo "  [6/6] Initialisation de la base de donnees..."
 cd "$APP_DIR"
-PYTHONPATH="$APP_DIR" python3 -c "import db; db.init_db(); print('  DB OK')"
+PYTHONPATH="$APP_DIR" "$APP_DIR/.venv/bin/python" -c "import db; db.init_db(); print('  DB OK')"
 
 # Desktop shortcut (uses launch.sh for clean port handling)
 chmod +x "$APP_DIR/launch.sh"
