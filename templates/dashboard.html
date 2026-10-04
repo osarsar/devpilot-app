@@ -1245,6 +1245,58 @@ select.form-input { cursor: pointer; }
     display: flex; align-items: center; justify-content: center;
 }
 .tour-help-btn:hover { transform: scale(1.1); box-shadow: 0 6px 24px rgba(109,92,255,.6); }
+
+/* ═══ Développer : dépôts, branches, outils, sessions ═══ */
+#ws-dev{padding:12px 14px;overflow-y:auto}
+.dev-sec{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--text-3);margin:6px 0 8px}
+.dev-n{font-weight:600;color:var(--text-4);margin-left:4px}
+.dev-repos{display:grid;gap:4px;margin-bottom:12px}
+.dev-repo{display:grid;grid-template-columns:auto auto 1fr;grid-template-areas:"n b d" "c c c";gap:3px 8px;align-items:center;text-align:left;
+  font:inherit;color:var(--text-1);background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;cursor:pointer}
+.dev-repo:hover{border-color:var(--text-4)}
+.dev-repo.on{border-color:var(--violet);box-shadow:0 0 0 1px var(--violet)}
+.dev-rn{grid-area:n;font-weight:650;font-size:13px}
+.dev-br{grid-area:b;font-family:'JetBrains Mono',monospace;font-size:11px;padding:1px 7px;border-radius:999px;background:rgba(109,92,255,.15);color:var(--violet)}
+.dev-br.base{background:rgba(245,158,11,.15);color:#f59e0b}
+.dev-rd{grid-area:d;font-size:10.5px;color:var(--text-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.dev-rc{grid-area:c;display:flex;gap:4px;flex-wrap:wrap}
+.dev-rc:empty{display:none}
+.dev-chip{font-size:10.5px;padding:0 6px;border-radius:4px;background:var(--bg-3,rgba(255,255,255,.06));color:var(--text-3)}
+.dev-chip.warn{color:#f59e0b;background:rgba(245,158,11,.12)}
+.dev-chip.info{color:#60a5fa;background:rgba(96,165,250,.12)}
+.dev-chip.bad{color:#f43f5e;background:rgba(244,63,94,.12)}
+.dev-card{border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--bg-2);margin-bottom:14px}
+.dev-ch{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.dev-path{font-size:10.5px;color:var(--text-4);word-break:break-all}
+.dev-warn{font-size:12px;color:#f59e0b;background:rgba(245,158,11,.1);border-radius:6px;padding:6px 9px;margin-bottom:8px}
+.dev-info{font-size:12px;color:#60a5fa;background:rgba(96,165,250,.1);border-radius:6px;padding:6px 9px;margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dev-lbl{font-size:11px;font-weight:650;color:var(--text-3);margin:10px 0 5px}
+.dev-row{display:flex;gap:6px;margin-bottom:6px}
+.dev-row .form-input{flex:1;min-width:0;font-size:12px;padding:6px 8px}
+.dev-stash{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-4);cursor:pointer}
+.dev-tools{display:flex;gap:6px;flex-wrap:wrap}
+.dev-tools .btn[disabled]{opacity:.45;cursor:not-allowed}
+.dev-claude{background:var(--violet)!important;color:#fff!important;border-color:var(--violet)!important}
+.dev-last{font-size:11px;color:var(--text-4);margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dev-sess{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font-size:12px}
+.dev-sess.on{background:rgba(109,92,255,.1)}
+.dev-sk{width:22px;text-align:center;color:var(--violet);font-weight:700}
+.dev-sl{flex:1;min-width:0;display:flex;flex-direction:column}
+.dev-ss{font-size:10.5px;color:var(--text-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dev-vide,.dev-wait,.dev-intro{font-size:12px;color:var(--text-4);padding:8px 2px;line-height:1.7}
+.dev-spin{display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;
+  animation:dev-tourne .7s linear infinite;vertical-align:-1px}
+@keyframes dev-tourne{to{transform:rotate(360deg)}}
+.term-tabs{flex:1;display:flex;gap:4px;overflow-x:auto;margin:0 8px;scrollbar-width:none;min-width:0}
+.term-tab{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-3);padding:3px 8px;border-radius:6px;cursor:pointer;
+  white-space:nowrap;border:1px solid transparent}
+.term-tab:hover{color:var(--text-1)}
+.term-tab.on{color:var(--text-1);background:rgba(109,92,255,.15);border-color:rgba(109,92,255,.4)}
+.term-ico{color:var(--violet);font-weight:700}
+.term-sous{font-size:10px;color:var(--text-4);font-family:'JetBrains Mono',monospace}
+.term-x{margin-left:2px;color:var(--text-4);padding:0 2px;border-radius:3px}
+.term-x:hover{color:#f43f5e;background:rgba(244,63,94,.12)}
 </style>
 </head>
 <body>
@@ -1309,6 +1361,9 @@ select.form-input { cursor: pointer; }
 
     <div class="sidebar-group">
         <div class="sidebar-label">Status</div>
+        <div class="sidebar-item" data-page="sessions" onclick="go('sessions')">
+            <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span> Sessions
+        </div>
         <div class="sidebar-item" data-page="running" onclick="go('running')">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></span> En cours <span class="hotkey">9</span>
         </div>
@@ -1486,7 +1541,8 @@ select.form-input { cursor: pointer; }
                         <div class="ws-tab" onclick="wsTab('info')">Infos</div>
                         <div class="ws-tab" onclick="wsTab('prompt')">Prompt</div></div>
                     </div>
-                    <div class="ws-panel active" id="ws-roadmap"></div>
+                    <div class="ws-panel active" id="ws-dev"></div>
+                    <div class="ws-panel" id="ws-roadmap"></div>
                     <div class="ws-panel" id="ws-checklist"></div>
                     <div class="ws-panel" id="ws-sessions"></div>
                     <div class="ws-panel" id="ws-connections"></div>
@@ -1501,10 +1557,10 @@ select.form-input { cursor: pointer; }
                         <span class="ws-term-dot" style="background:#ff5f57"></span>
                         <span class="ws-term-dot" style="background:#febc2e"></span>
                         <span class="ws-term-dot" style="background:#28c840"></span>
-                        <span id="ws-term-title" style="font-size:11px;color:var(--text-3);margin-left:8px">Terminal</span>
-                        <div style="flex:1"></div>
-                        <button class="btn btn-xs" onclick="wsOpenTerminal('claude')" style="background:var(--violet);color:#fff;border-color:var(--violet)" title="Ouvrir Claude dans un terminal externe">Claude</button>
-                        <button class="btn btn-xs" onclick="wsOpenTerminal('bash')" title="Ouvrir un terminal bash externe">Externe</button>
+                        <span id="ws-term-title" style="display:none">Terminal</span>
+                        <div id="ws-term-tabs" class="term-tabs"></div>
+                        <button class="btn btn-xs" onclick="wsNewSession('terminal')" title="Nouveau terminal dans le dépôt choisi (onglet Développer)">+ Terminal</button>
+                        <button class="btn btn-xs" onclick="wsNewSession('claude')" style="background:var(--violet);color:#fff;border-color:var(--violet)" title="Claude dans le dépôt choisi (onglet Développer)">+ Claude</button>
                     </div>
                     <div id="ws-xterm" onclick="if(xterm)xterm.focus()" style="flex:1;overflow:hidden;cursor:text"></div>
                 </div>
@@ -1670,7 +1726,19 @@ select.form-input { cursor: pointer; }
         </div>
 
         <!-- ════ SETTINGS ════ -->
+        <div id="page-sessions" class="page"><div id="sessions-body"></div></div>
+
         <div id="page-settings" class="page">
+            <!-- Outils de développement -->
+            <div class="card mb-20">
+                <div class="section-title">Outils de développement</div>
+                <div class="grid-2" style="margin-bottom:0">
+                    <div class="form-group"><label>Commande de l'éditeur</label><input class="form-input mono" id="set-editor-cmd" placeholder="code (VS Code) · codium · cursor · subl"></div>
+                    <div class="form-group"><label>Commande de Claude</label><input class="form-input mono" id="set-claude-cmd" placeholder="claude"></div>
+                </div>
+                <div style="font-size:11px;color:var(--text-4);margin-bottom:10px">Utilisées par l'onglet « Développer » de chaque projet. Vide = valeur par défaut.</div>
+                <button class="btn btn-primary btn-sm" onclick="saveDevTools()">Enregistrer</button>
+            </div>
             <!-- GitHub -->
             <div class="card mb-20">
                 <div class="flex-between mb-12">
@@ -2549,7 +2617,7 @@ let charts = {};
 const PAGE_TITLES = {
     dashboard: 'Dashboard', projects: 'Projets', storage: 'Stockage',
     caches: 'Caches', docker: 'Docker', network: 'Reseau', running: 'En cours',
-    timeline: 'Timeline', settings: 'Parametres', cloud: 'Cloud Sync',
+    timeline: 'Timeline', settings: 'Parametres', cloud: 'Cloud Sync', sessions: 'Sessions',
     proniver: 'Proniver Documents'
 };
 
@@ -2644,7 +2712,8 @@ function loadPage(p) {
     const loaders = {
         dashboard: loadDashboard, projects: loadProjects, storage: loadStorage,
         caches: loadCaches, docker: loadDocker, network: loadNetwork, running: loadRunning,
-        timeline: () => loadTimeline(24), settings: loadSettings, cloud: loadCloudOverview
+        timeline: () => loadTimeline(24), settings: () => { loadSettings(); loadDevTools(); }, cloud: loadCloudOverview,
+        sessions: loadSessionsPage
     };
     (loaders[p] || (() => {}))();
 }
@@ -3074,7 +3143,7 @@ let wsComponents = [];
 
 function buildWsTabs(components) {
     // Determine which tabs to show based on active components
-    const tabs = ['roadmap', 'checklist', 'sessions', 'connections'];
+    const tabs = ['dev', 'roadmap', 'checklist', 'sessions', 'connections'];
     if (!components || components.length === 0) {
         tabs.push('git', 'cloud', 'info', 'prompt');
     } else {
@@ -3158,7 +3227,9 @@ async function openWorkspace(pid) {
             <button class="btn btn-xs btn-primary" style="margin-left:8px" onclick="go('projects');openMoveModal(${pid})">Relocaliser</button></div>`;
     }
 
-    wsTab('roadmap');
+    devState = null; wsTermSid = null; devSessions = [];
+    wsTab('dev');
+    loadWsRoadmap();          // ligne de phase sous le titre + badge « Etapes », quel que soit l'onglet affiché
     loadWsModel();
     loadWsRunning();
     loadWsChecklist();
@@ -3166,10 +3237,11 @@ async function openWorkspace(pid) {
     loadWsPrompt();
 }
 
-const WS_TAB_LABELS = { roadmap: 'Etapes', checklist: 'Checklist', sessions: 'Sessions', connections: 'Connexions', git: 'Git', cloud: 'Cloud', info: 'Infos', prompt: 'Prompt' };
-const WS_TAB_TITLES = { roadmap: 'Feuille de route : phases et prochaine etape', checklist: 'Taches du projet', sessions: 'Notes de session', connections: 'GitHub, serveurs, domaine, email...', git: 'Depots, synchronisation', cloud: 'Sauvegardes et stockage', info: 'Informations du projet', prompt: 'Brief / prompt pour Claude' };
+const WS_TAB_LABELS = { dev: 'Développer', roadmap: 'Etapes', checklist: 'Checklist', sessions: 'Notes', connections: 'Connexions', git: 'Git', cloud: 'Cloud', info: 'Infos', prompt: 'Prompt' };
+const WS_TAB_TITLES = { dev: 'Dépôts, branches : où travailler, avec Claude, VS Code ou un terminal', roadmap: 'Feuille de route : phases et prochaine etape', checklist: 'Taches du projet', sessions: 'Notes de session', connections: 'GitHub, serveurs, domaine, email...', git: 'Depots, synchronisation', cloud: 'Sauvegardes et stockage', info: 'Informations du projet', prompt: 'Brief / prompt pour Claude' };
 const _svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const WS_TAB_ICONS = {
+    dev: _svg('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><path d="M14 4l-4 16"/>'),
     roadmap: _svg('<path d="M4 4h16v4H4z"/><path d="M4 12h10"/><path d="M4 18h7"/><circle cx="18" cy="16" r="3"/>'),
     checklist: _svg('<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>'),
     sessions: _svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
@@ -3205,6 +3277,7 @@ function wsTab(tab) {
     if (btn) { btn.classList.add('active'); btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
     const panel = document.getElementById('ws-' + tab);
     if (panel) panel.classList.add('active');
+    if (tab === 'dev') loadWsDev();
     if (tab === 'roadmap') loadWsRoadmap();
     if (tab === 'sessions') loadWsSessions();
     if (tab === 'connections') loadWsConnections();
@@ -4864,6 +4937,256 @@ function loadWsGit() {
     if (wsProjectData.github_org) loadWsOrg();
 }
 
+
+/* ═══════════════════════ DÉVELOPPER ═══════════════════════
+   Choisir OÙ travailler (dépôt, branche), puis ouvrir l'outil LÀ :
+   Claude, VS Code, un terminal — dans DevPilot ou dans une fenêtre.
+   Plusieurs sessions par projet, en onglets au-dessus du terminal.  */
+let devState = null;              // {repos, tools} du projet ouvert
+let wsDevRepo = null;             // dir du dépôt choisi ('.' = racine)
+let wsTermSid = null;             // session affichée dans le terminal
+const devBranches = {};           // cache des branches par dépôt
+const DEV_KIND_ICO = {claude: '✦', terminal: '›_', ssh: '⇄', import: '⇣'};
+
+function devErr(r) { return (r && (r.message || r.error)) || 'erreur'; }
+function devRepoKey(pid) { return 'dp-dev-repo-' + pid; }
+function devCur() { return devState && (devState.repos.find(r => r.dir === wsDevRepo) || devState.repos[0]); }
+
+async function loadWsDev(fetchGh) {
+    const pid = wsProjectId, el = document.getElementById('ws-dev');
+    if (!devState) el.innerHTML = '<div class="dev-wait"><span class="dev-spin"></span> Lecture des dépôts…</div>';
+    const r = await api(`projects/${pid}/dev/repos${fetchGh ? '?fetch=1' : ''}`).catch(e => ({success: false, message: e.message}));
+    if (pid !== wsProjectId) return;
+    if (!r.success){ el.innerHTML = `<div class="alert alert-warning">${hx(devErr(r))}</div>`; return; }
+    devState = r;
+    let saved = null; try { saved = localStorage.getItem(devRepoKey(pid)); } catch (e) {}
+    if (!r.repos.some(x => x.dir === wsDevRepo)) wsDevRepo = r.repos.some(x => x.dir === saved) ? saved : (r.repos[0] || {}).dir || null;
+    renderWsDev();
+    loadTermTabs();
+}
+
+function devChoose(dir) {
+    wsDevRepo = dir;
+    try { localStorage.setItem(devRepoKey(wsProjectId), dir); } catch (e) {}
+    renderWsDev();
+}
+
+function devRepoRow(r) {
+    const chips = [];
+    if (r.modified) chips.push(`<span class="dev-chip warn" title="fichiers modifiés non commités">${r.modified} modifié${r.modified > 1 ? 's' : ''}</span>`);
+    if (r.untracked) chips.push(`<span class="dev-chip" title="nouveaux fichiers non suivis">${r.untracked} nouveau${r.untracked > 1 ? 'x' : ''}</span>`);
+    if (r.for_base) chips.push(`<span class="dev-chip" title="commits de cette branche pas encore dans ${hx(r.base)}">↑${r.for_base} pour ${hx(r.base)}</span>`);
+    if (r.ahead) chips.push(`<span class="dev-chip info" title="commits pas encore poussés sur GitHub">${r.ahead} à pousser</span>`);
+    if (r.rebasing || r.merging) chips.push(`<span class="dev-chip bad">${r.rebasing ? 'rebase' : 'fusion'} en cours</span>`);
+    const sel = r.dir === wsDevRepo ? ' on' : '';
+    return `<button class="dev-repo${sel}" onclick="devChoose('${hx(r.dir)}')" title="${hx(r.path)}">
+        <span class="dev-rn">${hx(r.name)}</span>
+        <span class="dev-br ${r.on_base ? 'base' : ''}" title="${r.on_base ? 'tu es sur la branche principale' : 'branche courante'}">${hx(r.branch)}</span>
+        <span class="dev-rd">${r.dir === '.' ? '' : hx(r.dir)}</span>
+        <span class="dev-rc">${chips.join('')}</span></button>`;
+}
+
+function renderWsDev() {
+    const el = document.getElementById('ws-dev');
+    if (!devState) return;
+    const r = devCur(), t = devState.tools;
+    if (!devState.repos.length){
+        el.innerHTML = `<div class="dev-vide">Aucun dépôt git dans ce projet.<br>
+            <button class="btn btn-sm" onclick="wsNewSession('terminal', '.')">Ouvrir un terminal dans le projet</button>
+            <button class="btn btn-sm" onclick="wsTab('git')">Lier à GitHub</button></div>`;
+        return;
+    }
+    const outil = (ok, cmd) => ok ? '' : `disabled title="introuvable : ${hx(cmd)} — Paramètres → Outils de développement"`;
+    el.innerHTML = `
+      <div class="dev-sec"><span>Dépôts <span class="dev-n">${devState.repos.length}</span></span>
+        <button class="btn btn-xs" onclick="this.disabled=true;this.innerHTML='<span class=dev-spin></span> GitHub…';loadWsDev(true)" title="Relit aussi GitHub (git fetch)">Actualiser</button></div>
+      <div class="dev-repos">${devState.repos.map(devRepoRow).join('')}</div>
+      ${r ? `
+      <div class="dev-card">
+        <div class="dev-ch"><b>${hx(r.name)}</b> <span class="dev-path mono">${hx(r.path)}</span></div>
+        ${r.on_base ? `<div class="dev-warn">Tu es sur <b>${hx(r.base)}</b> : crée une branche avant de modifier (on ne pousse jamais sur ${hx(r.base)}).</div>` : ''}
+        ${r.base_behind ? `<div class="dev-info">Ta copie de <b>${hx(r.base)}</b> a ${r.base_behind} commit${r.base_behind > 1 ? 's' : ''} de retard sur GitHub.
+            <button class="btn btn-xs" onclick="devUpdateMain(this)">Mettre ${hx(r.base)} à jour</button></div>` : ''}
+        <div class="dev-lbl">Branche</div>
+        <div class="dev-row">
+          <select class="form-input dev-sel" id="dev-branch-sel" onfocus="devLoadBranches()" onchange="devSwitchReady()">
+            <option value="">${hx(r.branch)} (actuelle)</option></select>
+          <button class="btn btn-sm" id="dev-switch-btn" onclick="devSwitch(this)" disabled>Passer dessus</button>
+        </div>
+        <div class="dev-row">
+          <input class="form-input mono" id="dev-new-name" placeholder="nouvelle branche, ex. fix/message-connexion" onkeydown="if(event.key==='Enter')devNewBranch(document.getElementById('dev-new-btn'))">
+          <button class="btn btn-sm btn-primary" id="dev-new-btn" onclick="devNewBranch(this)" title="Créée depuis ${hx(r.base)} à jour (GitHub)">Créer</button>
+        </div>
+        <label class="dev-stash"><input type="checkbox" id="dev-stash"> mettre de côté mes modifications non commitées (git stash) si besoin</label>
+        <div class="dev-lbl">Ouvrir ici</div>
+        <div class="dev-tools">
+          <button class="btn btn-sm dev-claude" onclick="wsNewSession('claude')" ${outil(t.claude.ok, t.claude.cmd)} title="Claude dans ce dépôt, dans DevPilot">✦ Claude</button>
+          <button class="btn btn-sm" onclick="wsNewSession('terminal')" title="Un terminal dans ce dépôt, dans DevPilot">›_ Terminal</button>
+          <button class="btn btn-sm" onclick="devOpen('editor', this)" ${outil(t.editor.ok, t.editor.cmd)} title="Ouvre ce dépôt dans l'éditeur">VS Code</button>
+          <button class="btn btn-sm" onclick="devOpen('external', this)" ${outil(t.external_terminal.ok, 'terminal externe')} title="Fenêtre de terminal séparée, dans ce dépôt">Fenêtre</button>
+          <button class="btn btn-sm" onclick="devOpen('external-claude', this)" ${outil(t.claude.ok && t.external_terminal.ok, t.claude.cmd)} title="Claude dans une fenêtre séparée">✦ Claude fenêtre</button>
+        </div>
+        <div class="dev-last">Dernier commit : <span class="mono">${hx(r.last.sha)}</span> ${hx(r.last.message)}</div>
+      </div>` : ''}
+      <div class="dev-sec"><span>Sessions de ce projet</span></div>
+      <div id="dev-sessions"><div class="dev-wait"><span class="dev-spin"></span></div></div>`;
+    renderDevSessions();
+}
+
+async function devLoadBranches(force) {
+    const r = devCur(); if (!r) return;
+    const sel = document.getElementById('dev-branch-sel');
+    if (!force && devBranches[r.path]) return fillBranches(sel, devBranches[r.path]);
+    sel.innerHTML = '<option>chargement…</option>';
+    const b = await api(`projects/${wsProjectId}/dev/branches?repo=${encodeURIComponent(r.dir)}`);
+    if (!b.success){ toast(devErr(b), 'error'); return; }
+    devBranches[r.path] = b;
+    fillBranches(sel, b);
+}
+function fillBranches(sel, b) {
+    if (!sel) return;
+    sel.innerHTML = b.branches.map(x => `<option value="${hx(x.name)}" ${x.current ? 'selected' : ''}>${hx(x.name)}${x.current ? ' (actuelle)' : ''}${!x.local ? ' — sur GitHub' : ''}${x.name === b.base ? ' — principale' : ''}</option>`).join('');
+}
+function devSwitchReady() {
+    const sel = document.getElementById('dev-branch-sel'), r = devCur();
+    document.getElementById('dev-switch-btn').disabled = !sel.value || sel.value === r.branch;
+}
+async function devAction(btn, url, body, ok) {
+    const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="dev-spin"></span>';
+    const r = await apiJson('POST', url, body);
+    btn.disabled = false; btn.innerHTML = old;
+    if (!r.success){ toast(devErr(r), 'error'); return null; }
+    if (ok) toast(ok(r));
+    if (r.note) toast(r.note, 'info');
+    const cur = devCur(); if (cur) delete devBranches[cur.path];
+    await loadWsDev();
+    return r;
+}
+function devSwitch(btn) {
+    const sel = document.getElementById('dev-branch-sel'), r = devCur();
+    return devAction(btn, `projects/${wsProjectId}/dev/switch`, {repo: r.dir, branch: sel.value, stash: document.getElementById('dev-stash').checked},
+                     x => `${r.name} : sur ${x.branch}`);
+}
+function devNewBranch(btn) {
+    const name = document.getElementById('dev-new-name').value.trim(), r = devCur();
+    if (!name){ document.getElementById('dev-new-name').focus(); return; }
+    return devAction(btn, `projects/${wsProjectId}/dev/new-branch`, {repo: r.dir, name, stash: document.getElementById('dev-stash').checked},
+                     x => `${r.name} : branche ${x.branch} créée depuis ${x.from}`);
+}
+function devUpdateMain(btn) {
+    const r = devCur();
+    return devAction(btn, `projects/${wsProjectId}/dev/update-main`, {repo: r.dir}, x => `${r.name} : ${x.message}`);
+}
+async function devOpen(tool, btn) {
+    const r = devCur(); if (!r) return;
+    btn.disabled = true;
+    const x = await apiJson('POST', `projects/${wsProjectId}/dev/open`, {repo: r.dir, tool});
+    btn.disabled = false;
+    if (!x.success) toast(devErr(x), 'error');
+    else toast(tool === 'editor' ? `${r.name} ouvert dans ${x.with}` : `Fenêtre ouverte dans ${r.name}`);
+}
+
+/* ── sessions (onglets du terminal) ── */
+let devSessions = [];
+async function loadTermTabs() {
+    if (!wsProjectId) return;
+    const pid = wsProjectId;
+    const l = await api('terminal/sessions?pid=' + pid).catch(() => []);
+    if (pid !== wsProjectId) return;
+    devSessions = Array.isArray(l) ? l : [];
+    renderTermTabs();
+    renderDevSessions();
+}
+function wsBaseSid() { return projectTermSid(wsProjectId); }
+function renderTermTabs() {
+    const box = document.getElementById('ws-term-tabs'); if (!box) return;
+    const base = wsBaseSid();
+    const autres = devSessions.filter(s => s.sid !== base);
+    const actif = wsTermSid || base;
+    const tab = (sid, ico, label, sous, fermable) => `<span class="term-tab ${sid === actif ? 'on' : ''}" onclick="wsAttach('${hx(sid)}')" title="${hx(sous || '')}">
+        <span class="term-ico">${ico}</span>${hx(label)}${sous ? `<span class="term-sous">${hx(sous)}</span>` : ''}
+        ${fermable ? `<span class="term-x" onclick="event.stopPropagation();wsKill('${hx(sid)}')" title="Fermer cette session">×</span>` : ''}</span>`;
+    const baseInfo = devSessions.find(s => s.sid === base);
+    box.innerHTML = tab(base, '›_', 'Projet', baseInfo && baseInfo.branch ? baseInfo.branch : '', false)
+        + autres.map(s => tab(s.sid, DEV_KIND_ICO[s.kind] || '›_', s.label, [s.repo !== '.' ? s.repo.split('/').pop() : '', s.branch].filter(Boolean).join(' · '), true)).join('');
+}
+function renderDevSessions() {
+    const z = document.getElementById('dev-sessions'); if (!z) return;
+    const base = wsBaseSid(), actif = wsTermSid || base;
+    if (!devSessions.length){ z.innerHTML = '<div class="dev-vide">Aucune session ouverte. « ✦ Claude » ou « ›_ Terminal » en ouvrent une dans le dépôt choisi.</div>'; return; }
+    z.innerHTML = devSessions.map(s => `<div class="dev-sess ${s.sid === actif ? 'on' : ''}">
+        <span class="dev-sk">${DEV_KIND_ICO[s.kind] || '›_'}</span>
+        <span class="dev-sl"><b>${hx(s.sid === base ? 'Terminal du projet' : s.label)}</b>
+          <span class="dev-ss">${hx(s.repo || '.')}${s.branch ? ' · ' + hx(s.branch) : ''} · ${hx(devDepuis(s.created))}</span></span>
+        <button class="btn btn-xs" onclick="wsAttach('${hx(s.sid)}')">${s.sid === actif ? 'Affichée' : 'Afficher'}</button>
+        ${s.sid !== base ? `<button class="btn btn-xs" onclick="wsKill('${hx(s.sid)}')" title="Arrête la session (et ce qui tourne dedans)">Fermer</button>` : ''}</div>`).join('');
+}
+function devDepuis(t) {
+    const s = Math.max(0, Date.now() / 1000 - t);
+    return s < 60 ? 'à l’instant' : s < 3600 ? `depuis ${Math.floor(s / 60)} min` : s < 86400 ? `depuis ${Math.floor(s / 3600)} h` : `depuis ${Math.floor(s / 86400)} j`;
+}
+function wsAttach(sid) {
+    const p = wsProjectData && wsProjectData.project; if (!p) return;
+    wsTermSid = sid;
+    startXterm(p.path, p.id, sid);
+    renderTermTabs(); renderDevSessions();
+}
+async function wsNewSession(kind, repo) {
+    const pid = wsProjectId; if (!pid) return;
+    const r = repo !== undefined ? repo : (devCur() ? devCur().dir : '.');
+    const x = await apiJson('POST', 'terminal/sessions', {pid, repo: r, kind});
+    if (!x.success){ toast(devErr(x), 'error'); return; }
+    await loadTermTabs();
+    wsAttach(x.sid);
+    toast(kind === 'claude' ? `Claude démarré dans ${x.label.replace('Claude · ', '')}` : `Terminal ouvert dans ${x.label}`);
+}
+async function wsKill(sid) {
+    const s = devSessions.find(x => x.sid === sid);
+    if (!confirm(`Fermer la session « ${s ? s.label : sid} » ? Ce qui tourne dedans est arrêté.`)) return;
+    await apiDel('terminal/sessions/' + encodeURIComponent(sid)).catch(() => {});
+    if ((wsTermSid || wsBaseSid()) === sid) wsAttach(wsBaseSid());
+    await loadTermTabs();
+}
+
+/* ── page « Sessions » : tous les projets ── */
+async function loadSessionsPage() {
+    const z = document.getElementById('sessions-body');
+    z.innerHTML = '<div class="dev-wait"><span class="dev-spin"></span> Lecture des sessions…</div>';
+    const l = await api('terminal/sessions').catch(() => []);
+    if (!l.length){ z.innerHTML = '<div class="card"><div class="dev-vide">Aucune session ouverte. Ouvre un projet, onglet « Développer », puis « ✦ Claude » ou « ›_ Terminal ».</div></div>'; return; }
+    const groupes = {};
+    l.forEach(s => { (groupes[s.project || 'Hors projet'] = groupes[s.project || 'Hors projet'] || []).push(s); });
+    z.innerHTML = `<div class="dev-intro">${l.length} session${l.length > 1 ? 's' : ''} ouverte${l.length > 1 ? 's' : ''}. Elles continuent en arrière-plan ; fermer un projet (« Fermer le projet ») arrête les siennes.</div>`
+      + Object.entries(groupes).map(([proj, ss]) => `<div class="card mb-12"><div class="dev-sec"><span>${hx(proj)} <span class="dev-n">${ss.length}</span></span>
+          ${ss[0].pid ? `<button class="btn btn-xs" onclick="openWorkspace(${ss[0].pid})">Ouvrir le projet</button>` : ''}</div>
+        ${ss.map(s => `<div class="dev-sess"><span class="dev-sk">${DEV_KIND_ICO[s.kind] || '›_'}</span>
+          <span class="dev-sl"><b>${hx(s.label)}</b><span class="dev-ss">${hx(s.repo || s.cwd)}${s.branch ? ' · ' + hx(s.branch) : ''} · ${hx(devDepuis(s.created))}${s.clients ? ' · affichée' : ''}</span></span>
+          ${s.pid ? `<button class="btn btn-xs" onclick="sessOuvrir(${s.pid}, '${hx(s.sid)}')">Afficher</button>` : ''}
+          <button class="btn btn-xs" onclick="sessFermer('${hx(s.sid)}', '${hx(s.label)}')">Fermer</button></div>`).join('')}</div>`).join('');
+}
+async function sessOuvrir(pid, sid) {
+    await openWorkspace(pid);
+    setTimeout(() => wsAttach(sid), 300);
+}
+async function sessFermer(sid, label) {
+    if (!confirm(`Fermer la session « ${label} » ? Ce qui tourne dedans est arrêté.`)) return;
+    await apiDel('terminal/sessions/' + encodeURIComponent(sid)).catch(() => {});
+    loadSessionsPage();
+}
+
+/* ── Paramètres : outils de développement ── */
+async function loadDevTools() {
+    const s = await api('settings').catch(() => ({}));
+    const e = document.getElementById('set-editor-cmd'), c = document.getElementById('set-claude-cmd');
+    if (e) e.value = s.editor_cmd || '';
+    if (c) c.value = s.claude_cmd || '';
+}
+async function saveDevTools() {
+    await apiPost('settings', {editor_cmd: document.getElementById('set-editor-cmd').value.trim(),
+                               claude_cmd: document.getElementById('set-claude-cmd').value.trim()});
+    toast('Outils de développement enregistrés');
+}
+
 // Real terminal with xterm.js + WebSocket PTY
 let xterm = null;
 let xtermWs = null;
@@ -4904,7 +5227,7 @@ function closeXterm() {
     if (xterm) { xterm.dispose(); xterm = null; }
 }
 
-function startXterm(cwd, pid) {
+function startXterm(cwd, pid, sid) {
     closeXterm();
 
     const container = document.getElementById('ws-xterm');
@@ -4928,7 +5251,7 @@ function startXterm(cwd, pid) {
     });
 
     // Connect WebSocket
-    const wsUrl = terminalWsUrl({ cwd: cwd, sid: projectTermSid(pid) });
+    const wsUrl = terminalWsUrl({ cwd: cwd, sid: sid || projectTermSid(pid) });
     xtermWs = new WebSocket(wsUrl);
 
     xtermWs.onopen = () => {

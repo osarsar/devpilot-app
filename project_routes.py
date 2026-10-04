@@ -599,3 +599,46 @@ def api_server_access(pid, sid):
                         also_root=_flag(b.get("also_root")), allow_password_login=b.get("allow_password_login", True) not in (False, "false", 0),
                         no_expiry=b.get("no_expiry", True) not in (False, "false", 0))
     return _ok(**r)
+
+
+# ── développer : dépôts, branches, outils ───────────────────────────────────
+import dev as DV  # noqa: E402
+
+
+@projects_bp.route("/api/projects/<int:pid>/dev/repos")
+def api_dev_repos(pid):
+    return _ok(**DV.repos(pid, fetch=_flag(request.args.get("fetch"))), tools=DV.tools())
+
+
+@projects_bp.route("/api/projects/<int:pid>/dev/branches")
+def api_dev_branches(pid):
+    return _ok(**DV.branches(pid, request.args.get("repo") or "."))
+
+
+@projects_bp.route("/api/projects/<int:pid>/dev/switch", methods=["POST"])
+def api_dev_switch(pid):
+    b = _body()
+    return _ok(**DV.switch(pid, b.get("repo") or ".", b.get("branch") or "", stash=_flag(b.get("stash"))))
+
+
+@projects_bp.route("/api/projects/<int:pid>/dev/new-branch", methods=["POST"])
+def api_dev_new_branch(pid):
+    b = _body()
+    return _ok(**DV.new_branch(pid, b.get("repo") or ".", b.get("name") or "", stash=_flag(b.get("stash"))))
+
+
+@projects_bp.route("/api/projects/<int:pid>/dev/update-main", methods=["POST"])
+def api_dev_update_main(pid):
+    return _ok(**DV.update_main(pid, _body().get("repo") or "."))
+
+
+@projects_bp.route("/api/projects/<int:pid>/dev/open", methods=["POST"])
+def api_dev_open(pid):
+    """{repo, tool: editor | external | external-claude} — VS Code or an external window IN the repo."""
+    b = _body()
+    repo, tool = b.get("repo") or ".", b.get("tool")
+    if tool == "editor":
+        return _ok(**DV.open_editor(pid, repo))
+    if tool in ("external", "external-claude"):
+        return _ok(**DV.open_external(pid, repo, claude=tool == "external-claude"))
+    raise P.ProjectError("Outil inconnu")
