@@ -610,6 +610,11 @@ def api_dev_repos(pid):
     return _ok(**DV.repos(pid, fetch=_flag(request.args.get("fetch"))), tools=DV.tools())
 
 
+@projects_bp.route("/api/projects/<int:pid>/dev/prs")
+def api_dev_prs(pid):
+    return _ok(prs=DV.prs(pid))
+
+
 @projects_bp.route("/api/projects/<int:pid>/dev/branches")
 def api_dev_branches(pid):
     return _ok(**DV.branches(pid, request.args.get("repo") or "."))
@@ -624,7 +629,8 @@ def api_dev_switch(pid):
 @projects_bp.route("/api/projects/<int:pid>/dev/new-branch", methods=["POST"])
 def api_dev_new_branch(pid):
     b = _body()
-    return _ok(**DV.new_branch(pid, b.get("repo") or ".", b.get("name") or "", stash=_flag(b.get("stash"))))
+    return _ok(**DV.new_branch(pid, b.get("repo") or ".", b.get("name") or "", stash=_flag(b.get("stash")),
+                               carry=_flag(b.get("carry"))))
 
 
 @projects_bp.route("/api/projects/<int:pid>/dev/update-main", methods=["POST"])
