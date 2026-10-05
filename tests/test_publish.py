@@ -250,3 +250,11 @@ def test_assistant_nouveaux_seulement_ne_recommande_pas_publier(monde):
     assert "jamais suivis" in out and "3) Publier mes modifications (pour les autres PC)   ← recommandé" not in out
     out = assistant(monde, a, "3\n\n")                         # publier → « les publier aussi ? » Entrée = NON
     assert "rien d'autre à publier" in out and "essai-local.sh" not in git(monde["nu"], "ls-tree", "-r", "--name-only", "main")
+
+
+def test_commande_inconnue_ne_lance_pas_devpilot(monde):
+    a = monde["pc"]("pc-a")
+    monde["run"](a, "update.sh", "--sans-redemarrer")
+    lanceur = Path(a["env"]["HOME"]) / ".local" / "bin" / "devpilot"
+    r = subprocess.run(["bash", str(lanceur), "effacr"], env=a["env"], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 2 and "commande inconnue" in r.stdout and "devpilot update" in r.stdout

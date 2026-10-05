@@ -56,6 +56,9 @@ case "${1:-}" in
                      echo "devpilot update          récupérer la dernière version publiée"
                      echo "devpilot version         ce PC comparé à GitHub"
                      echo "devpilot effacer         effacer de ce PC tout ce qui touche à DevPilot et aux projets (--simulation d'abord)"; exit 0 ;;
+  "") ;;
+  *)                 echo "✗ commande inconnue : devpilot $1"
+                     echo "  les commandes : devpilot help — une commande récente manque ? devpilot update"; exit 2 ;;
 esac
 PY="$APP_DIR/.venv/bin/python"; [ -x "$PY" ] || PY=python3
 cd "$APP_DIR" && exec "$PY" dashboard.py "$@"
