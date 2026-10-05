@@ -87,7 +87,7 @@ def test_inventaire_signale_le_travail_local(monde):
 
 def test_tout_effacer_sauf_le_travail_non_sauve(monde):
     h = monde["home"]
-    rc, out = monde["lancer"]("1\n" + "\n" * monde["nb"](1) + monde["phrase"] + "\n")
+    rc, out = monde["lancer"]("1\n" + "\n" * monde["nb"](1) + monde["phrase"] + "\nphrase-archive-1\nphrase-archive-1\n")
     assert rc == 0, out
     assert not (monde["projets"] / "propre").exists()                         # projet propre : effacé
     assert (monde["projets"] / "travail").exists()                            # travail local : GARDÉ (défaut non)
@@ -101,7 +101,7 @@ def test_tout_effacer_sauf_le_travail_non_sauve(monde):
 
 
 def test_le_travail_local_s_efface_seulement_si_on_le_dit(monde):
-    rc, out = monde["lancer"]("2\n" + "o\n" * monde["nb"](2) + monde["phrase"] + "\n")
+    rc, out = monde["lancer"]("2\n" + "o\n" * monde["nb"](2) + monde["phrase"] + "\nphrase-archive-1\nphrase-archive-1\n")
     assert rc == 0 and not (monde["projets"] / "travail").exists() and not (monde["home"] / "devpilot").exists()
 
 
@@ -129,3 +129,28 @@ def test_refuse_depuis_un_terminal_devpilot(monde):
     env = dict(os.environ, HOME=str(monde["home"]), TMUX="/tmp/tmux-1000/devpilot,123,0")
     r = subprocess.run([sys.executable, str(APP / "effacer.py")], input="", env=env, capture_output=True, text=True, timeout=60)
     assert r.returncode == 2 and "terminal NORMAL" in r.stdout
+
+
+
+def test_archive_reelle_chiffree_et_relisible(monde, tmp_path):
+    """Vrai gpg (pas le faux) : la phrase passe par le programme, l'archive se relit avec."""
+    import shutil
+    if not shutil.which("gpg"):
+        pytest.skip("gpg absent")
+    h = monde["home"]
+    gnupg = tmp_path / "gnupg"; gnupg.mkdir(mode=0o700)
+    env = dict(os.environ, HOME=str(h), GNUPGHOME=str(gnupg))
+    script = f"""
+import sys; sys.path.insert(0, {str(APP)!r})
+import effacer
+journal = []
+effacer.action_export(effacer.ESPACE / "data")(journal)
+print("\\n".join(journal))
+"""
+    r = subprocess.run([sys.executable, "-c", script], input="trop\nphrase-archive-1\nphrase-archive-1\n", env=env,
+                       capture_output=True, text=True, timeout=120)
+    assert "8 caractères minimum" in r.stdout and "sauvegardées" in r.stdout, r.stdout + r.stderr
+    arch = next(h.glob("devpilot-donnees-*.tar.gz.gpg"))
+    d = subprocess.run(f"gpg --batch --pinentry-mode loopback --passphrase phrase-archive-1 -d {arch} | tar -tz",
+                       shell=True, env=env, capture_output=True, text=True)
+    assert "data/devpilot.db" in d.stdout, d.stderr
