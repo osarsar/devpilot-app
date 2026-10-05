@@ -53,7 +53,7 @@ case "${1:-}" in
   help|-h|--help)    echo "devpilot                 lancer DevPilot"
                      echo "devpilot pc              l'assistant : il dit quoi faire sur ce PC et le fait"
                      echo "devpilot publish \"msg\"   publier mes modifications (tests, PR, fusion) pour tous les PC"
-                     echo "devpilot update          récupérer la dernière version publiée"
+                     echo "devpilot update          récupérer la dernière version (tu choisis la branche, ★ main)"
                      echo "devpilot version         ce PC comparé à GitHub"
                      echo "devpilot effacer         effacer de ce PC tout ce qui touche à DevPilot et aux projets (--simulation d'abord)"; exit 0 ;;
   "") ;;

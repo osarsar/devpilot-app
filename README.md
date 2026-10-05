@@ -166,6 +166,15 @@ depuis un autre PC), la PR (ouverte / fusionnée), et les boutons Ouvrir / Termi
 devpilot update
 ```
 
+Il montre la branche de DevPilot et son état, avec le choix recommandé **★** (`main` si rien
+n'est en cours, sinon il reste sur sa branche) : **Entrée** pour l'accepter, **c** pour choisir.
+
+**Les dépôts de tes projets** : dans DevPilot, onglet **Développer** → **⇣ Mettre à jour** (ou
+depuis la ⎇ Carte des branches) : chaque dépôt avec sa branche, le choix ★ pré-sélectionné, une
+liste pour en choisir une autre (sur ce PC ou sur GitHub), **Appliquer**, puis le rapport dépôt
+par dépôt. Jamais de « pull » à l'aveugle sur une vieille branche ; un dépôt avec des
+modifications non commitées ne change pas de branche.
+
 **Quand tu as modifié DevPilot** (publie pour tous les PC) :
 
 ```bash
