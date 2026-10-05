@@ -414,15 +414,42 @@ def action_export(donnees: Path):
         dest = HOME / f"devpilot-donnees-{time.strftime('%Y%m%d-%H%M')}.tar.gz.gpg"
         if SIMULATION:
             journal.append(f"· sauvegarderait les données DevPilot → {dest}"); return
+        # La phrase est demandée ICI, dans ton terminal : laissée à gpg, elle passait par sa fenêtre
+        # « pinentry », qui n'atteint pas ce terminal → « Timeout » (vécu le 2026-10-05).
+        phrase = phrase_secrete()
+        if not phrase:
+            raise SystemExit("arrêt : pas de phrase secrète, RIEN n'a été effacé")
+        lire, ecrire = os.pipe()
+        os.write(ecrire, (phrase + "\n").encode()); os.close(ecrire)
         tar = subprocess.Popen(["tar", "-czf", "-", "-C", str(donnees.parent), donnees.name], stdout=subprocess.PIPE)
-        print(f"  {G}Phrase secrète de l'archive{N} (gpg te la demande deux fois — note-la) :")
-        rc = subprocess.run(["gpg", "--symmetric", "--cipher-algo", "AES256", "-o", str(dest)], stdin=tar.stdout).returncode
-        tar.wait()
-        journal.append(f"✓ données DevPilot sauvegardées : {dest} (garde-la !)" if rc == 0 and dest.exists()
+        rc = subprocess.run(["gpg", "--batch", "--yes", "--pinentry-mode", "loopback", "--passphrase-fd", str(lire),
+                             "--symmetric", "--cipher-algo", "AES256", "-o", str(dest)],
+                            stdin=tar.stdout, pass_fds=(lire,), capture_output=True, text=True)
+        os.close(lire); tar.wait()
+        if rc.returncode != 0:
+            journal.append("    " + (rc.stderr or "").strip()[-200:])
+        rc = rc.returncode
+        journal.append(f"✓ données DevPilot sauvegardées : {dest} (garde-la !)\n"
+                       f"    pour la relire : gpg -d {dest.name} | tar -xz" if rc == 0 and dest.exists()
                        else "✗ sauvegarde des données DevPilot ÉCHOUÉE")
         if rc != 0:
             raise SystemExit("arrêt : la sauvegarde a échoué, RIEN n'a été effacé")
     return faire
+
+
+def phrase_secrete():
+    """La phrase de l'archive, deux fois, cachée (8 caractères min.) — '' si abandon."""
+    import getpass
+    lire = getpass.getpass if sys.stdin.isatty() else (lambda q: (print(q, end="", flush=True), sys.stdin.readline().rstrip("\n"))[1])
+    print(f"  {G}Phrase secrète de l'archive{N} — note-la : sans elle, l'archive est illisible.")
+    for _ in range(3):
+        p1 = lire("  phrase : ")
+        if len(p1) < 8:
+            print(f"  {J}8 caractères minimum{N}"); continue
+        if lire("  encore une fois : ") == p1:
+            return p1
+        print(f"  {J}les deux ne correspondent pas{N}")
+    return ""
 
 
 def action_arret_devpilot():
