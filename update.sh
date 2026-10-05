@@ -58,6 +58,8 @@ case "${1:-}" in
   update|maj)        shift; exec "$APP_DIR/update.sh" "$@" ;;
   publish|publier)   shift; exec "$APP_DIR/publish.sh" "$@" ;;
   pc|assistant)      shift; exec "$APP_DIR/pc.sh" "$@" ;;
+  effacer)           shift; PY="$APP_DIR/.venv/bin/python"; [ -x "$PY" ] || PY=python3
+                     exec "$PY" "$APP_DIR/effacer.py" "$@" ;;
   version)           git -C "$APP_DIR" fetch -q origin main 2>/dev/null
                      echo "ce PC   : $(git -C "$APP_DIR" log -1 --format='%h %s (%cr)')"
                      echo "GitHub  : $(git -C "$APP_DIR" log -1 --format='%h %s (%cr)' origin/main)"
@@ -66,7 +68,8 @@ case "${1:-}" in
                      echo "devpilot pc              l'assistant : il dit quoi faire sur ce PC et le fait"
                      echo "devpilot publish \"msg\"   publier mes modifications (tests, PR, fusion) pour tous les PC"
                      echo "devpilot update          récupérer la dernière version publiée"
-                     echo "devpilot version         ce PC comparé à GitHub"; exit 0 ;;
+                     echo "devpilot version         ce PC comparé à GitHub"
+                     echo "devpilot effacer         effacer de ce PC tout ce qui touche à DevPilot et aux projets (--simulation d'abord)"; exit 0 ;;
 esac
 PY="$APP_DIR/.venv/bin/python"; [ -x "$PY" ] || PY=python3
 cd "$APP_DIR" && exec "$PY" dashboard.py "$@"
