@@ -1,6 +1,6 @@
 #!/bin/bash
 # DevPilot — se mettre à jour depuis GitHub (branche main), sur n'importe quel PC.
-#   devpilot update              → main à jour, dépendances, commande « devpilot », redémarrage
+#   devpilot update              → tu choisis la branche (★ main), dépendances, commande « devpilot », redémarrage
 #   devpilot update --sans-redemarrer
 # Les sessions persistantes (tmux) survivent au redémarrage.
 set -u
@@ -22,21 +22,12 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
      jeter    : git -C $APP_DIR checkout -- .   (perdu pour de bon)"
 fi
 
-# 2. sur main, à jour depuis GitHub
+# 2. la branche de DevPilot : MONTRÉE et CHOISIE (★ main si rien n'est en cours) — plus de bascule
+#    forcée, ni de pull à l'aveugle sur une vieille branche. Sans clavier (publish, tests) : le ★.
 git fetch -q origin "$BRANCHE" || ko "GitHub injoignable (réseau ?) : git -C $APP_DIR fetch origin"
 AVANT=$(git rev-parse HEAD)
-ICI=$(git branch --show-current)
-if [ "$ICI" != "$BRANCHE" ]; then
-  git switch -q "$BRANCHE" 2>/dev/null || git switch -q -c "$BRANCHE" "origin/$BRANCHE" \
-    || ko "impossible de passer sur $BRANCHE"
-  ok "passé de la branche « $ICI » à $BRANCHE (« $ICI » est gardée)"
-fi
-git merge -q --ff-only "origin/$BRANCHE" 2>/dev/null || ko "$BRANCHE locale a des commits absents de GitHub. Que faire :
-     voir     : git -C $APP_DIR log --oneline origin/$BRANCHE..$BRANCHE
-     les jeter: git -C $APP_DIR reset --hard origin/$BRANCHE"
+bash "$APP_DIR/choisir-branches.sh" "$APP_DIR" || ko "DevPilot n'a pas pu être mis à jour sur la branche choisie (ci-dessus)"
 APRES=$(git rev-parse HEAD)
-EN_PLUS=$(git rev-list --count "origin/$BRANCHE..HEAD")
-[ "$EN_PLUS" -gt 0 ] && echo "! $EN_PLUS commit(s) de ce PC pas sur GitHub (git -C $APP_DIR log --oneline origin/$BRANCHE..) — passe par une branche + PR"
 if [ "$AVANT" = "$APRES" ]; then
   ok "déjà à jour ($(git log -1 --format='%h %s'))"
 else

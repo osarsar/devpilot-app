@@ -1311,6 +1311,17 @@ select.form-input { cursor: pointer; }
 .dev-down{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--rose);border:1px solid rgba(244,63,94,.35);background:var(--rose-dim);border-radius:7px;padding:4px 10px}
 .dev-down small{font-weight:500;opacity:.8}
 .dev-api:hover{color:var(--text-1);border-color:var(--text-4)}
+/* ── mettre à jour les dépôts : la branche de chacun, CHOISIE ── */
+#maj-modal{width:min(980px,96vw);min-width:0;max-height:92vh;padding:20px 22px}
+.maj-tab{width:100%;border-collapse:collapse;font-size:13px}
+.maj-tab th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);padding:6px 8px;border-bottom:1px solid var(--border-2)}
+.maj-tab td{padding:9px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+.maj-tab .mono{font-family:'JetBrains Mono',monospace;font-size:12px}
+.maj-tab select{font-size:12px;padding:4px 6px;max-width:240px}
+.maj-pq{font-size:11.5px;color:var(--text-3);margin-top:2px}
+.maj-zone{overflow-x:auto}
+.maj-res{font-size:12.5px;line-height:1.7;margin-top:12px}
+@media (max-width:760px){ #maj-modal{padding:14px} .maj-tab{font-size:12px} }
 /* ── carte des branches : dépôt → branche de travail → main ── */
 #brm-modal{width:min(1180px,96vw);min-width:0;max-height:92vh;padding:20px 22px}
 .brm-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
@@ -2382,10 +2393,24 @@ select.form-input { cursor: pointer; }
     </div>
 </div>
 
+<!-- Mettre à jour les dépôts d'un projet : la branche de chacun est montrée et choisie -->
+<div class="modal" id="maj-modal">
+    <div class="brm-head">
+        <h3 id="maj-title">Mettre à jour les dépôts</h3>
+        <button class="btn btn-sm" onclick="closeModals()">Fermer</button>
+    </div>
+    <div class="brm-intro">Chaque dépôt avec sa branche actuelle. <b>★</b> = ce qui sera récupéré : <b>main</b> si rien n'est en cours,
+        sinon il <b>reste sur sa branche</b> (rien ne se perd). Change le choix d'un dépôt dans sa liste, puis <b>Appliquer</b>.</div>
+    <div id="maj-body"><div class="brm-wait"><span class="dev-spin"></span> Lecture des dépôts et de GitHub…</div></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModals()">Annuler</button>
+        <button class="btn btn-primary" id="maj-go" onclick="majAppliquer()" disabled>Appliquer</button></div>
+</div>
+
 <!-- Carte des branches d'un projet : dépôt → branche de travail → main -->
 <div class="modal" id="brm-modal">
     <div class="brm-head">
         <h3 id="brm-title">Branches</h3>
+        <button class="btn btn-sm" onclick="majOpen()" title="Récupérer depuis GitHub en choisissant la branche de chaque dépôt">⇣ Mettre à jour les dépôts</button>
         <button class="btn btn-sm" id="brm-refresh" onclick="brmLoad(true)" title="Relit GitHub (git fetch) et les PR">Actualiser depuis GitHub</button>
         <button class="btn btn-sm" onclick="closeModals()">Fermer</button>
     </div>
@@ -5088,7 +5113,8 @@ function renderWsDev() {
     const outil = (ok, cmd) => ok ? '' : `disabled title="introuvable : ${hx(cmd)} — Paramètres → Outils de développement"`;
     el.innerHTML = `
       <div class="dev-sec"><span>Dépôts <span class="dev-n">${devState.repos.length}</span></span>
-        <span style="display:flex;gap:6px"><button class="btn btn-xs" id="dev-brm-btn" onclick="brmOpen()" title="Voir chaque dépôt, sa branche de travail et son chemin vers main">⎇ Carte des branches</button>
+        <span style="display:flex;gap:6px"><button class="btn btn-xs" id="dev-maj-btn" onclick="majOpen()" title="Récupérer depuis GitHub en choisissant la branche de chaque dépôt">⇣ Mettre à jour</button>
+        <button class="btn btn-xs" id="dev-brm-btn" onclick="brmOpen()" title="Voir chaque dépôt, sa branche de travail et son chemin vers main">⎇ Carte des branches</button>
         <button class="btn btn-xs" onclick="this.disabled=true;this.innerHTML='<span class=dev-spin></span> GitHub…';loadWsDev(true)" title="Relit aussi GitHub (git fetch)">Actualiser</button></span></div>
       <div class="dev-repos">${devState.repos.map(devRepoRow).join('')}</div>
       ${r ? `
@@ -5234,6 +5260,48 @@ async function devStart(dir, btn) {
         const pv = devPrev(dir);
         if (pv && pv.running.length){ toast(`Prêt : localhost:${pv.running[0].port} — clique pour ouvrir`); return; }
     }
+}
+
+/* ── mettre à jour les dépôts : la branche de chacun, MONTRÉE et CHOISIE ── */
+let majPlan = null;
+async function majOpen() {
+    closeModals();
+    document.getElementById('overlay').classList.add('visible');
+    document.getElementById('maj-modal').classList.add('visible');
+    document.getElementById('maj-title').textContent = 'Mettre à jour les dépôts — ' + ((devState && devState.project) || '');
+    const body = document.getElementById('maj-body'), go = document.getElementById('maj-go');
+    body.innerHTML = '<div class="brm-wait"><span class="dev-spin"></span> Lecture des dépôts et de GitHub…</div>'; go.disabled = true;
+    const pid = wsProjectId;
+    const r = await api(`projects/${pid}/dev/maj`).catch(e => ({success: false, message: e.message}));
+    if (pid !== wsProjectId) return;
+    if (!r.success){ body.innerHTML = `<div class="alert alert-warning">${hx(devErr(r))}</div>`; return; }
+    majPlan = r;
+    body.innerHTML = `<div class="maj-zone"><table class="maj-tab"><thead><tr><th>Dépôt</th><th>Branche actuelle</th><th>Récupérer</th></tr></thead><tbody>
+      ${r.repos.map((x, i) => `<tr>
+        <td><b>${hx(x.name)}</b><div class="maj-pq mono">${x.dir === '.' ? 'racine' : hx(x.dir)}</div></td>
+        <td><span class="mono">${hx(x.branch)}</span>
+          ${x.pourquoi ? `<div class="maj-pq">${hx(x.pourquoi)}</div>` : ''}
+          ${x.nouveautes ? `<div class="maj-pq" style="color:var(--blue)">${hx(x.base)} a ${x.nouveautes} nouveauté${x.nouveautes > 1 ? 's' : ''} sur GitHub</div>` : ''}</td>
+        <td><select class="form-input" id="maj-sel-${i}">${x.choix.map(c => `<option value="${hx(c.name)}" ${c.name === x.cible ? 'selected' : ''}>${c.name === x.cible ? '★ ' : ''}${hx(c.name)}${c.name === x.branch ? ' (actuelle)' : ''}${!c.local ? ' — sur GitHub' : (!c.github ? ' — sur ce PC seulement' : '')}</option>`).join('')}</select></td>
+      </tr>`).join('')}</tbody></table></div><div class="maj-res" id="maj-res"></div>`;
+    go.disabled = false;
+}
+async function majAppliquer() {
+    if (!majPlan) return;
+    const choix = {};
+    majPlan.repos.forEach((x, i) => { choix[x.dir] = document.getElementById('maj-sel-' + i).value; });
+    const go = document.getElementById('maj-go'); go.disabled = true; go.innerHTML = '<span class="dev-spin"></span> Mise à jour…';
+    const r = await apiJson('POST', `projects/${wsProjectId}/dev/maj`, {choix});
+    go.innerHTML = 'Appliquer';
+    const res = document.getElementById('maj-res');
+    if (!r.success){ res.innerHTML = `<div class="alert alert-warning">${hx(devErr(r))}</div>`; go.disabled = false; return; }
+    const nom = d => (majPlan.repos.find(x => x.dir === d) || {}).name || d;
+    res.innerHTML = r.resultats.map(x => x.ok
+        ? `<div>✓ <b>${hx(nom(x.dir))}</b> : ${x.de !== x.branch ? `${hx(x.de)} → ` : ''}<span class="mono">${hx(x.branch)}</span> ${x.change ? `${hx(x.avant)} → ${hx(x.apres)} <span style="color:var(--text-4)">${hx(x.message)}</span>` : '<span style="color:var(--text-4)">déjà à jour</span>'}</div>`
+        : `<div style="color:var(--rose)">✗ <b>${hx(nom(x.dir))}</b> : ${hx(x.message)}</div>`).join('');
+    const ko = r.resultats.filter(x => !x.ok).length;
+    toast(ko ? `${ko} dépôt(s) non mis à jour — détail dans la fenêtre` : 'Dépôts à jour sur les branches choisies', ko ? 'error' : 'success');
+    loadWsDev();
 }
 
 /* ── carte des branches : dépôt → branche de travail → main ── */
@@ -6556,7 +6624,7 @@ function renderOrg(ov) {
     }).join('');
     return `<div class="card mb-8" style="padding:14px">
         <div class="flex-between mb-8"><a href="${hx(ov.web)}" target="_blank" style="font-size:13px;font-weight:700;color:var(--text-0);text-decoration:none">github.com/${hx(ov.org)}</a>
-            <button class="btn btn-xs btn-primary" onclick="wsOrgPullAll()" title="git pull sur chaque depot propre (jamais sur un depot avec des changements)">Tout recuperer</button></div>
+            <button class="btn btn-xs btn-primary" onclick="majOpen()" title="Chaque dépôt avec sa branche : tu choisis ce qui est récupéré">⇣ Mettre à jour les dépôts</button></div>
         ${rows}
         <div id="ws-org-out" style="margin-top:8px"></div>
         <div style="font-size:10px;color:var(--text-4);margin-top:6px">Clique sur un emplacement pour le choisir : Synchroniser et les actions rapides s'y appliquent.</div>
@@ -6719,8 +6787,8 @@ function renderSync(s) {
             <div class="flex gap-6"><button class="btn btn-xs btn-primary" onclick="wsSync('commit')">Commiter et synchroniser</button>
             <button class="btn btn-xs" onclick="wsSync('stash')">Mettre de cote le temps de la synchro</button></div>
         </div>
-        <button class="btn btn-xs btn-primary" id="ws-sync-btn" onclick="wsSync()">Synchroniser</button>
-        <span style="font-size:10px;color:var(--text-4);margin-left:6px">recupere GitHub (rebase) puis envoie tes commits</span>
+        <button class="btn btn-xs btn-primary" id="ws-sync-btn" onclick="wsSync()">Synchroniser ${hx(s.branch || '')}</button>
+        <span style="font-size:10px;color:var(--text-4);margin-left:6px">la branche <b>${hx(s.branch || '?')}</b> seulement : récupère GitHub (rebase) puis envoie tes commits — pour changer de branche : « ⇣ Mettre à jour les dépôts »</span>
         <div id="ws-sync-out" style="margin-top:8px"></div>`);
 }
 
