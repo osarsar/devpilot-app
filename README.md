@@ -18,6 +18,7 @@ les serveurs, le nettoyage du disque.
 4. [Chaque jour : récupérer / publier DevPilot](#4-chaque-jour--récupérer--publier-devpilot)
 5. [Préparer un PC pour publier](#5-préparer-un-pc-pour-publier)
 6. [Ça ne marche pas ?](#6-ça-ne-marche-pas-)
+   — et [vider ce PC](#vider-ce-pc-tout-effacer-pour-le-reconstruire-plus-tard)
 7. [Pour développer DevPilot](#7-pour-développer-devpilot)
 
 ---
@@ -32,6 +33,7 @@ les serveurs, le nettoyage du disque.
 | publier ce que j'ai modifié (pour tous les PC) | `devpilot publish "ce que j'ai changé"` |
 | comparer ce PC à GitHub | `devpilot version` |
 | l'aide | `devpilot help` |
+| vider ce PC de tout ce qui touche à DevPilot et aux projets | `devpilot effacer --simulation` puis `devpilot effacer` |
 
 ---
 
@@ -235,6 +237,36 @@ ssh -T git@github.com        # doit répondre « Hi <ton compte>! »
 
 ---
 
+### Vider ce PC (tout effacer, pour le reconstruire plus tard)
+
+DevPilot est fait pour que tout soit dans le cloud (GitHub, coffre, sauvegardes) : ce PC peut
+redevenir vierge, puis être reconstruit (section 2). **Depuis un terminal normal** (pas un
+terminal DevPilot) :
+
+```bash
+devpilot effacer --simulation     # montre tout ce qui serait fait — n'efface RIEN
+devpilot effacer                  # pour de vrai
+```
+
+1. **Inventaire** : chaque projet (taille, dépôts), son Docker (conteneurs, volumes = bases
+   locales, images construites), ses liens et raccourcis, DevPilot lui-même (programme,
+   données, commande, icône, service), les clés créées par DevPilot ; plus ce que chaque projet
+   déclare avoir installé ailleurs (fichier `effacer-poste.sh` d'un de ses dépôts).
+2. **Le travail qui n'est QUE sur ce PC** est signalé dépôt par dépôt (fichiers non commités,
+   commits jamais poussés, stash) : ce projet n'est **jamais** coché par défaut. Une branche
+   déjà fusionnée par une PR n'est pas comptée.
+3. **Tu choisis** : « tout » (il redemande seulement pour le travail non sauvegardé et les
+   secrets) ou élément par élément.
+4. **Avant d'effacer** : sauvegarde chiffrée des données DevPilot (`~/devpilot-donnees-….tar.gz.gpg`,
+   garde-la), et les actions déclarées par les projets (sauvegardes, retrait des clés…).
+5. **Confirmation tapée** (`EFFACER <nom-du-pc>`), puis effacement et journal.
+
+Jamais touché : tes autres clés (`~/.ssh/id_*`), `~/.gitconfig`, docker lui-même, les paquets
+(tmux, gh…), tes fichiers hors projets, et rien hors de ton dossier personnel. Les secrets
+sont écrasés avant d'être effacés. Les copies dans le cloud restent intactes.
+
+---
+
 ## 7. Pour développer DevPilot
 
 ```bash
@@ -247,5 +279,5 @@ DEVPILOT_PORT=5566 .venv/bin/python dashboard.py   # une 2ᵉ instance pour test
   gabarit Jinja : ne jamais écrire `{{` dans son JavaScript).
 - `dev.py` (dépôts, branches, carte), `preview.py` (aperçu local), `persist.py` (sessions tmux),
   `ports.py`, `controller.py` (la console d'un projet), `servers.py`, `sshaccess.py`.
-- `publish.sh`, `update.sh`, `pc.sh` : les commandes `devpilot publish / update / pc`.
+- `publish.sh`, `update.sh`, `pc.sh`, `effacer.py` : les commandes `devpilot publish / update / pc / effacer`.
 - On publie avec `devpilot publish` : branche → PR → fusion, jamais de push direct sur `main`.
