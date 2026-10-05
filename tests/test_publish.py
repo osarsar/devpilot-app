@@ -97,7 +97,7 @@ def test_publier_puis_mettre_a_jour_un_autre_pc(monde):
     a, b = monde["pc"]("pc-a"), monde["pc"]("pc-b")
     (a["dir"] / "page.py").write_text("TITRE = 'v2'\n")
     (a["dir"] / "nouveau.py").write_text("X = 1\n")                                  # fichier nouveau aussi
-    rc, out = monde["run"](a, "publish.sh", "Titre v2", "--sans-tests", "--sans-redemarrer")
+    rc, out = monde["run"](a, "publish.sh", "Titre v2", "--avec-nouveaux", "--sans-tests", "--sans-redemarrer")
     assert rc == 0, out
     assert "v2" in sur_github(monde) and sur_github(monde, "nouveau.py") == "X = 1"
     assert git(monde["nu"], "log", "-1", "--format=%s", "main") == "Titre v2 (#1)"     # un commit propre, via PR
@@ -120,7 +120,7 @@ def test_rien_a_publier(monde):
 def test_secret_refuse_rien_envoye(monde, contenu):
     a = monde["pc"]("pc-a"); avant = git(monde["nu"], "rev-parse", "main")
     (a["dir"] / "conf.py").write_text(contenu)
-    rc, out = monde["run"](a, "publish.sh", "oups", "--sans-tests", "--sans-redemarrer")
+    rc, out = monde["run"](a, "publish.sh", "oups", "--avec-nouveaux", "--sans-tests", "--sans-redemarrer")
     assert rc != 0 and "REFUS" in out
     assert git(monde["nu"], "rev-parse", "main") == avant and (a["dir"] / "conf.py").exists()
     assert git(a["dir"], "diff", "--cached", "--name-only") == ""                      # rien laissé indexé
@@ -156,9 +156,9 @@ def test_deux_pc_meme_ligne_rien_d_ecrase(monde):
 def test_deux_pc_fichiers_differents_tout_passe(monde):
     a, b = monde["pc"]("pc-a"), monde["pc"]("pc-b")
     (a["dir"] / "a.py").write_text("A = 1\n")
-    assert monde["run"](a, "publish.sh", "A", "--sans-tests", "--sans-redemarrer")[0] == 0
+    assert monde["run"](a, "publish.sh", "A", "--avec-nouveaux", "--sans-tests", "--sans-redemarrer")[0] == 0
     (b["dir"] / "b.py").write_text("B = 1\n")
-    rc, out = monde["run"](b, "publish.sh", "B", "--sans-tests", "--sans-redemarrer")
+    rc, out = monde["run"](b, "publish.sh", "B", "--avec-nouveaux", "--sans-tests", "--sans-redemarrer")
     assert rc == 0, out
     assert sur_github(monde, "a.py") == "A = 1" and sur_github(monde, "b.py") == "B = 1"
 
@@ -167,7 +167,7 @@ def test_tests_en_echec_rien_envoye(monde):
     a = monde["pc"]("pc-a"); avant = git(monde["nu"], "rev-parse", "main")
     (a["dir"] / "tests").mkdir()
     (a["dir"] / "tests" / "test_x.py").write_text("def test_casse():\n    assert False\n")
-    rc, out = monde["run"](a, "publish.sh", "cassé", "--sans-redemarrer")
+    rc, out = monde["run"](a, "publish.sh", "cassé", "--avec-nouveaux", "--sans-redemarrer")
     assert rc != 0 and "tests en échec" in out and git(monde["nu"], "rev-parse", "main") == avant
 
 
@@ -211,3 +211,42 @@ def test_assistant_recommande_publier(monde):
     (a["dir"] / "page.py").write_text("TITRE = 'local'\n")
     out = assistant(monde, a, "q\n")
     assert "modifié(s) ici, pas encore publiés" in out and "3) Publier mes modifications (pour les autres PC)   ← recommandé" in out
+
+
+
+# ── fichiers NOUVEAUX : jamais publiés sans un choix explicite (le dépôt est public)
+
+def test_nouveaux_fichiers_refus_sans_choix(monde):
+    a = monde["pc"]("pc-a"); avant = git(monde["nu"], "rev-parse", "main")
+    (a["dir"] / "essai.sh").write_text("echo local\n")
+    rc, out = monde["run"](a, "publish.sh", "x", "--sans-tests", "--sans-redemarrer")
+    assert rc != 0 and "nouveau : essai.sh" in out and "--sans-nouveaux" in out
+    assert git(monde["nu"], "rev-parse", "main") == avant
+
+
+def test_sans_nouveaux_publie_le_code_garde_le_reste_ici(monde):
+    a = monde["pc"]("pc-a")
+    (a["dir"] / "page.py").write_text("TITRE = 'v2'\n")
+    (a["dir"] / "notes-perso.txt").write_text("à moi")
+    rc, out = monde["run"](a, "publish.sh", "v2", "--sans-nouveaux", "--sans-tests", "--sans-redemarrer")
+    assert rc == 0, out
+    assert "v2" in sur_github(monde) and "notes-perso.txt" not in git(monde["nu"], "ls-tree", "-r", "--name-only", "main")
+    assert (a["dir"] / "notes-perso.txt").exists()
+
+
+@pytest.mark.parametrize("chemin", ["data.avant-restore-20260807/users.json", "autounattend.xml", "backup/dump.sql", "conf.bak"])
+def test_donnees_et_sauvegardes_refusees_meme_avec_nouveaux(monde, chemin):
+    a = monde["pc"]("pc-a"); avant = git(monde["nu"], "rev-parse", "main")
+    f = a["dir"] / chemin; f.parent.mkdir(parents=True, exist_ok=True); f.write_text("x")
+    rc, out = monde["run"](a, "publish.sh", "x", "--avec-nouveaux", "--sans-tests", "--sans-redemarrer")
+    assert rc != 0 and "REFUS" in out and git(monde["nu"], "rev-parse", "main") == avant
+
+
+def test_assistant_nouveaux_seulement_ne_recommande_pas_publier(monde):
+    a = monde["pc"]("pc-a")
+    monde["run"](a, "update.sh", "--sans-redemarrer")
+    (a["dir"] / "essai-local.sh").write_text("echo\n")
+    out = assistant(monde, a, "q\n")
+    assert "jamais suivis" in out and "3) Publier mes modifications (pour les autres PC)   ← recommandé" not in out
+    out = assistant(monde, a, "3\n\n")                         # publier → « les publier aussi ? » Entrée = NON
+    assert "rien d'autre à publier" in out and "essai-local.sh" not in git(monde["nu"], "ls-tree", "-r", "--name-only", "main")

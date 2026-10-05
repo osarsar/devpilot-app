@@ -3,6 +3,8 @@
 #
 #   devpilot publish "ce que j'ai changé"           tests compris (~3 min)
 #   devpilot publish "ce que j'ai changé" --sans-tests
+#   Fichiers NOUVEAUX (jamais suivis) : rien ne part sans ton choix explicite —
+#     --avec-nouveaux  les publier aussi      --sans-nouveaux  les laisser sur ce PC
 #
 # Fait, dans l'ordre, et s'arrête au premier problème SANS rien envoyer :
 #   1. vérifie : pas de secret (le dépôt est PUBLIC), pas de marques de conflit
@@ -20,11 +22,13 @@ ko()   { echo "✗ $*" >&2; exit 1; }
 cd "$APP_DIR" || ko "dossier introuvable : $APP_DIR"
 git rev-parse --git-dir >/dev/null 2>&1 || ko "$APP_DIR n'est pas un dépôt git"
 
-MSG=""; TESTS=1; REDEMARRER=1
+MSG=""; TESTS=1; REDEMARRER=1; NOUVEAUX=""
 for a in "$@"; do
   case "$a" in
     --sans-tests) TESTS=0 ;;
     --sans-redemarrer) REDEMARRER=0 ;;
+    --avec-nouveaux) NOUVEAUX=avec ;;
+    --sans-nouveaux) NOUVEAUX=sans ;;
     -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) ko "option inconnue : $a" ;;
     *) MSG="$a" ;;
@@ -47,7 +51,18 @@ BR=$(git branch --show-current)
 [ -n "$BR" ] || ko "HEAD détaché — place-toi sur une branche :  git -C $APP_DIR switch $BASE"
 [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ] || [ -f .git/MERGE_HEAD ] && \
   ko "une fusion / un rebase est en cours — termine-le ou :  git -C $APP_DIR merge --abort  /  rebase --abort"
-SALE=$(git status --porcelain)
+# Fichiers NOUVEAUX : souvent des fichiers de CE PC (sauvegardes, essais, configs locales) —
+# le dépôt est PUBLIC : rien de nouveau ne part sans un choix explicite.
+NOUV=$(git ls-files --others --exclude-standard)
+if [ -n "$NOUV" ] && [ -z "$NOUVEAUX" ]; then
+  echo "$NOUV" | sed 's/^/  nouveau : /' | head -20
+  ko "fichiers NOUVEAUX ci-dessus (jamais suivis par git). Choisis :
+     les publier aussi        : devpilot publish \"$MSG\" --avec-nouveaux
+     les laisser sur ce PC    : devpilot publish \"$MSG\" --sans-nouveaux
+     (ou ajoute-les à .gitignore s'ils ne doivent jamais partir)"
+fi
+SALE=$(git status --porcelain --untracked-files=no)
+[ "$NOUVEAUX" = avec ] && SALE="$SALE$NOUV"
 EN_PLUS=$(git rev-list --count "origin/$BASE..HEAD")
 if [ -z "$SALE" ] && [ "$EN_PLUS" = 0 ]; then
   ok "rien à publier : ce PC est identique à GitHub ($(git log -1 --format='%h %s'))"
@@ -56,7 +71,7 @@ fi
 
 # ── 1. vérifications (avant tout commit) ───────────────────────────────────
 etape "vérifications"
-git add -A
+if [ "$NOUVEAUX" = avec ]; then git add -A; else git add -u; fi
 DEPART=$(git merge-base HEAD "origin/$BASE")
 annuler() { git reset -q; }
 # marques de conflit : deux fois elles ont cassé un main (md_console #31, #34)
@@ -66,7 +81,7 @@ MARQUES=$(git grep --cached -lE '^(<<<<<<<|>>>>>>>)( |$)' -- . ':!*.md' 2>/dev/n
 AJOUTS=$(git diff --cached "$DEPART" -U0 | grep -E '^\+[^+]' || true)
 FICHIERS=$(git diff --cached --name-only "$DEPART")
 SECRETS=$(echo "$AJOUTS" | grep -nE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,}|xox[bp]-[A-Za-z0-9-]{10,}' | head -5)
-SFIC=$(echo "$FICHIERS" | grep -E '(^|/)(\.env|.*\.pem|.*\.key|id_rsa|id_ed25519|.*\.sqlite3?|.*\.db)$' | grep -v '\.example$' | head -5)
+SFIC=$(echo "$FICHIERS" | grep -E '(^|/)(\.env|.*\.pem|.*\.key|id_rsa|id_ed25519|.*\.sqlite3?|.*\.db)$|(^|/)data[^/]*/|avant-restore|\.bak($|[.-])|(^|/)backups?/|autounattend\.xml$' | grep -v '\.example$' | head -5)
 # mots interdits PROPRES À TOI (vraies IP, domaines clients…) : jamais dans le dépôt, donc dans un
 # fichier local — un par ligne. Ex. :  ~/.config/devpilot/interdits.txt
 INTERDITS="${DEVPILOT_INTERDITS:-$HOME/.config/devpilot/interdits.txt}"
