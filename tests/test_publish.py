@@ -55,7 +55,7 @@ def monde(tmp_path, monkeypatch):
     for k, v in {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}.items():
         monkeypatch.setenv(k, v)
     src = tmp_path / "src"; src.mkdir()
-    for f in ("publish.sh", "update.sh", "pc.sh"):
+    for f in ("publish.sh", "update.sh", "pc.sh", "choisir-branches.sh"):
         shutil.copy(APP / f, src / f)
     (src / "requirements.txt").write_text("")
     (src / "page.py").write_text("TITRE = 'v1'\n")
@@ -258,3 +258,14 @@ def test_commande_inconnue_ne_lance_pas_devpilot(monde):
     lanceur = Path(a["env"]["HOME"]) / ".local" / "bin" / "devpilot"
     r = subprocess.run(["bash", str(lanceur), "effacr"], env=a["env"], capture_output=True, text=True, timeout=30)
     assert r.returncode == 2 and "commande inconnue" in r.stdout and "devpilot update" in r.stdout
+
+
+def test_update_repasse_sur_main_depuis_une_branche_finie(monde):
+    a, b = monde["pc"]("pc-a"), monde["pc"]("pc-b")
+    gb = lambda *x: subprocess.run(["git", *x], cwd=b["dir"], env=b["env"], capture_output=True, text=True, check=True)
+    gb("switch", "-q", "-c", "feat/finie")                                   # branche sans travail propre
+    (a["dir"] / "page.py").write_text("TITRE = 'v2'\n")
+    assert monde["run"](a, "publish.sh", "v2", "--sans-tests", "--sans-redemarrer")[0] == 0
+    rc, out = monde["run"](b, "update.sh", "--sans-redemarrer")
+    assert rc == 0, out
+    assert "★" in out and git(b["dir"], "branch", "--show-current") == "main" and "v2" in (b["dir"] / "page.py").read_text()

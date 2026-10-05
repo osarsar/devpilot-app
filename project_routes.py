@@ -619,6 +619,16 @@ def api_dev_previews(pid):
     return _ok(previews=preview.previews(pid))
 
 
+@projects_bp.route("/api/projects/<int:pid>/dev/maj")
+def api_dev_plan_maj(pid):
+    return _ok(**DV.plan_maj(pid))
+
+
+@projects_bp.route("/api/projects/<int:pid>/dev/maj", methods=["POST"])
+def api_dev_appliquer_maj(pid):
+    return _ok(**DV.appliquer_maj(pid, _body().get("choix") or {}))
+
+
 @projects_bp.route("/api/projects/<int:pid>/dev/prs")
 def api_dev_prs(pid):
     return _ok(prs=DV.prs(pid))

@@ -311,6 +311,91 @@ def prs(pid):
         return {d: x for d, x in ex.map(one, st) if x}
 
 
+# ── mettre à jour les dépôts : la branche de chacun est MONTRÉE et CHOISIE ──────────
+# Jamais de « git pull » à l'aveugle sur la branche où un dépôt se trouve : resté sur une vieille
+# branche, il ne récupérait rien de main (vécu sur plusieurs PC, 2026-10-05).
+
+def _recommande(st):
+    """La branche à récupérer par défaut (★) : main si rien n'est en cours, sinon rester (rien ne se perd)."""
+    cur, base = st["branch"], st["base"]
+    if st["branch"].startswith("("):
+        return base, "HEAD détaché"
+    if st["modified"]:
+        return cur, f"{st['modified']} fichier(s) modifié(s) non commité(s) — reste sur sa branche"
+    if cur == base:
+        return base, ""
+    if st["merge"] == "done" or (st["merge"] == "empty" and not st["to_push"]):
+        return base, "branche finie (déjà dans main)" if st["merge"] == "done" or st["remote_branch"] \
+            else "branche locale sans travail propre"
+    if not st["remote_branch"] or st["to_push"]:
+        return cur, f"{st['to_push'] or 'des'} commit(s) jamais poussé(s) — reste sur sa branche"
+    return cur, "branche en cours (sur GitHub)"
+
+
+def plan_maj(pid):
+    """Pour chaque dépôt : branche actuelle, état, nouveautés de main, branches possibles, choix ★."""
+    p, root = project_root(pid)
+    from concurrent.futures import ThreadPoolExecutor
+
+    def un(path):
+        st = repo_state(root, path, fetch=True)
+        cible, pourquoi = _recommande(st)
+        base = st["base"]
+        ob = f"origin/{base}"
+        nouveautes = _n(_git(path, "rev-list", "--count", f"{'HEAD' if st['on_base'] else base}..{ob}")[1]) if _exists(path, ob) else 0
+        _, loc, _ = _git(path, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads")
+        _, rem, _ = _git(path, "for-each-ref", "--sort=-committerdate", "--format=%(refname:lstrip=3)", "refs/remotes/origin")
+        vues, choix = set(), []
+        for b, ici in [(base, None)] + [(x, True) for x in loc.splitlines()] + [(x, False) for x in rem.splitlines()]:
+            if not b or b == "HEAD" or b in vues:
+                continue
+            vues.add(b)
+            choix.append({"name": b, "local": _exists(path, f"refs/heads/{b}"), "github": _exists(path, f"origin/{b}")})
+        return {"dir": st["dir"], "name": st["name"], "branch": st["branch"], "base": base, "modified": st["modified"],
+                "merge": st["merge"], "nouveautes": nouveautes, "cible": cible, "pourquoi": pourquoi, "choix": choix[:15]}
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        return {"project": p["name"], "repos": list(ex.map(un, _find(root)))}
+
+
+def appliquer_maj(pid, choix):
+    """choix = {dir: branche}. Passe chaque dépôt sur SA branche choisie puis l'avance depuis GitHub
+    (avance rapide seulement). Rien n'est écrasé : modifications non commitées → le dépôt reste."""
+    _, root = project_root(pid)
+    out = []
+    for d, cible in (choix or {}).items():
+        try:
+            path = repo_path(pid, d)
+        except ProjectError as e:
+            out.append({"dir": d, "ok": False, "message": e.message}); continue
+        if not valid_name(path, cible):
+            out.append({"dir": d, "ok": False, "message": f"branche invalide : {cible}"}); continue
+        _git(path, "fetch", "-q", "--prune", "origin", timeout=60)       # l'état de GitHub MAINTENANT
+        _, cur, _ = _git(path, "branch", "--show-current")
+        avant = _git(path, "rev-parse", "--short", "HEAD")[1]
+        if cible != cur:
+            if _dirty(path):
+                out.append({"dir": d, "ok": False, "message": f"modifications non commitées — reste sur {cur} (commite ou mets de côté, puis recommence)"})
+                continue
+            if _exists(path, f"refs/heads/{cible}"):
+                rc, _, err = _git(path, "switch", cible)
+            elif _exists(path, f"origin/{cible}"):
+                rc, _, err = _git(path, "switch", "--track", f"origin/{cible}")
+            else:
+                out.append({"dir": d, "ok": False, "message": f"branche inconnue : {cible}"}); continue
+            if rc != 0:
+                out.append({"dir": d, "ok": False, "message": "changement de branche refusé : " + (err.splitlines()[-1] if err else "?")}); continue
+        if _exists(path, f"origin/{cible}"):
+            rc, _, err = _git(path, "merge", "--ff-only", f"origin/{cible}")
+            if rc != 0:
+                out.append({"dir": d, "ok": False, "branch": cible,
+                            "message": f"{cible} a des commits absents de GitHub — laissé tel quel"}); continue
+        apres = _git(path, "rev-parse", "--short", "HEAD")[1]
+        _, msg, _ = _git(path, "log", "-1", "--format=%s")
+        out.append({"dir": d, "ok": True, "branch": cible, "avant": avant, "apres": apres, "change": avant != apres or cible != cur,
+                    "de": cur, "message": msg[:90]})
+    return {"resultats": out}
+
+
 # ── tools ───────────────────────────────────────────────────────────────────
 
 def editor_cmd():

@@ -153,4 +153,5 @@ print("\\n".join(journal))
     arch = next(h.glob("devpilot-donnees-*.tar.gz.gpg"))
     d = subprocess.run(f"gpg --batch --pinentry-mode loopback --passphrase phrase-archive-1 -d {arch} | tar -tz",
                        shell=True, env=env, capture_output=True, text=True)
+    subprocess.run(["gpgconf", "--kill", "gpg-agent"], env=env, capture_output=True)       # pas d'agent laissé derrière
     assert "data/devpilot.db" in d.stdout, d.stderr
