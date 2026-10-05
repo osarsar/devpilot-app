@@ -19,6 +19,7 @@ V="\033[32m"; R="\033[31m"; J="\033[33m"; G="\033[1m"; D="\033[2m"; N="\033[0m"
 exec 3<&0
 demander() { local r; printf "%b" "$1" >&2; IFS= read -r r <&3 || r=""; echo "$r"; }
 oui()      { local r; r=$(demander "$1 ${D}[O/n]${N} "); [[ ! "$r" =~ ^[nN] ]]; }
+oui_non()  { local r; r=$(demander "$1 ${D}[o/N]${N} "); [[ "$r" =~ ^[oOyY] ]]; }      # défaut : NON
 ok()       { echo -e "${V}✓${N} $*"; }
 bof()      { echo -e "${J}!${N} $*"; }
 ko()       { echo -e "${R}✗${N} $*"; }
@@ -26,12 +27,13 @@ titre()    { echo; echo -e "${G}$*${N}"; }
 
 # ── l'état du PC ─────────────────────────────────────────────────────────────
 etat() {
-  INSTALLE=0; GIT=0; ANCIEN=0; BR=""; SALES=0; RETARD="?"; AVANCE=0; ICI=""; LA=""
+  INSTALLE=0; GIT=0; ANCIEN=0; BR=""; SALES=0; NOUV=0; RETARD="?"; AVANCE=0; ICI=""; LA=""
   [ -f "$APP/dashboard.py" ] && INSTALLE=1
   [ "$INSTALLE" = 1 ] && git -C "$APP" rev-parse --git-dir >/dev/null 2>&1 && GIT=1
   if [ "$GIT" = 1 ]; then
     BR=$(git -C "$APP" branch --show-current)
-    SALES=$(git -C "$APP" status --porcelain | wc -l)
+    SALES=$(git -C "$APP" status --porcelain --untracked-files=no | wc -l)      # code suivi, modifié
+    NOUV=$(git -C "$APP" ls-files --others --exclude-standard | wc -l)            # fichiers jamais suivis
     if timeout 20 git -C "$APP" fetch -q origin main 2>/dev/null; then
       RETARD=$(git -C "$APP" rev-list --count HEAD..origin/main)
       AVANCE=$(git -C "$APP" rev-list --count origin/main..HEAD)
@@ -58,6 +60,7 @@ afficher() {
   [ -n "$LA" ] && echo -e "  GitHub  : ${LA}" || bof "GitHub injoignable (réseau ?)"
   [ "$RETARD" = "?" ] || { [ "$RETARD" -gt 0 ] && bof "$RETARD nouveauté(s) sur GitHub pas encore ici" || ok "à jour avec GitHub"; }
   [ "$SALES" -gt 0 ] && bof "$SALES fichier(s) modifié(s) ici, pas encore publiés"
+  [ "$NOUV" -gt 0 ] && echo -e "  ${D}$NOUV fichier(s) nouveau(x) ici, jamais suivis — ils restent sur ce PC sauf si tu choisis de les publier${N}"
   [ "$AVANCE" -gt 0 ] && bof "$AVANCE commit(s) ici, pas encore publiés"
   [ "$ANCIEN" = 1 ] && bof "ancienne installation : il manque « devpilot publish / update »"
   [ "$PRET" = 1 ] && ok "prêt à publier (gh, clé SSH, liste des mots interdits)" \
@@ -108,12 +111,20 @@ publier() {
     etat </dev/null
     [ "$PRET" = 1 ] || return 1
   fi
-  [ "$SALES" -gt 0 ] && git -C "$APP" status --short | head -15
+  local opt=""
+  if [ "$NOUV" -gt 0 ]; then
+    echo "  Fichiers NOUVEAUX sur ce PC (jamais suivis) :"
+    git -C "$APP" ls-files --others --exclude-standard | sed 's/^/    /' | head -20
+    if oui_non "  Les publier aussi ? (sauvegardes, essais, fichiers de ce PC : NON — le dépôt est public)"; then opt="--avec-nouveaux"; else opt="--sans-nouveaux"; fi
+    if [ "$opt" = "--sans-nouveaux" ] && [ "$SALES" = 0 ] && [ "$AVANCE" = 0 ]; then
+      ok "rien d'autre à publier — ces fichiers restent sur ce PC"; return 0
+    fi
+  fi
+  [ "$SALES" -gt 0 ] && { echo "  Modifications à publier :"; git -C "$APP" status --short --untracked-files=no | sed 's/^/    /' | head -15; }
   local msg
   msg=$(demander "Qu'as-tu changé ? (une phrase) : ")
   [ -n "$msg" ] || { ko "il faut une phrase"; return 1; }
-  local opt=""
-  oui "Lancer les tests avant (2-3 min, recommandé) ?" || opt="--sans-tests"
+  oui "Lancer les tests avant (2-3 min, recommandé) ?" || opt="$opt --sans-tests"
   bash "$APP/publish.sh" "$msg" $opt
 }
 
