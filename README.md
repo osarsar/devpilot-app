@@ -14,10 +14,11 @@ les serveurs, le nettoyage du disque.
 
 1. [Les commandes à retenir](#1-les-commandes-à-retenir)
 2. [PC vierge : installer DevPilot](#2-pc-vierge--installer-devpilot)
-3. [Chaque jour : récupérer / publier](#3-chaque-jour--récupérer--publier)
-4. [Préparer un PC pour publier](#4-préparer-un-pc-pour-publier)
-5. [Ça ne marche pas ?](#5-ça-ne-marche-pas-)
-6. [Pour développer DevPilot](#6-pour-développer-devpilot)
+3. [Travailler sur un projet avec DevPilot](#3-travailler-sur-un-projet-avec-devpilot)
+4. [Chaque jour : récupérer / publier DevPilot](#4-chaque-jour--récupérer--publier-devpilot)
+5. [Préparer un PC pour publier](#5-préparer-un-pc-pour-publier)
+6. [Ça ne marche pas ?](#6-ça-ne-marche-pas-)
+7. [Pour développer DevPilot](#7-pour-développer-devpilot)
 
 ---
 
@@ -62,7 +63,100 @@ l'assistant propose « Première mise à niveau ».
 
 ---
 
-## 3. Chaque jour : récupérer / publier
+## 3. Travailler sur un projet avec DevPilot
+
+Le chemin d'une modification, de l'idée à `main` — sans jamais toucher `main` directement :
+
+```
+main ──────────────●──────────   (ne change que par une fusion)
+                   ↑ PR fusionnée
+ta branche ──●──●──●             (tu y travailles, tu la pousses autant que tu veux)
+```
+
+### 1. Ouvrir le projet
+
+**Projets** → ton projet (ou **+ Ajouter un projet**) → l'onglet **Développer** s'ouvre.
+À gauche, **Dépôts** : tous les dépôts git du projet, même imbriqués, avec leur branche
+actuelle et leur état (`2 modifiés`, `1 à pousser`, `● :5180` s'il tourne).
+
+### 2. Choisir le dépôt et partir d'un main à jour
+
+Clique le dépôt où tu vas travailler. Sa fiche s'ouvre en dessous.
+Si elle dit « Ta copie de main a N commits de retard » → **Mettre main à jour**.
+
+### 3. Créer ta branche — une par tâche
+
+Dans **Branche**, tape un nom (ex. `feat/page-contact`, `fix/message-connexion`) → **Créer**.
+Elle part toujours de `main` à jour sur GitHub. Si tu avais modifié des fichiers sur `main`
+par erreur, coche « mettre de côté », ou crée la branche depuis la carte (étape 6) avec
+« emporter mes modifications ».
+
+### 4. Ouvrir ton outil, directement dans le dépôt
+
+Sous **Ouvrir ici** :
+
+| Bouton | Ce que ça ouvre |
+|---|---|
+| **✦ Claude** | une session Claude dans ce dépôt, en onglet à droite |
+| **›_ Terminal** | un terminal dans ce dépôt, en onglet à droite |
+| **VS Code** | le dépôt dans VS Code |
+| **Fenêtre** / **✦ Claude fenêtre** | un terminal (ou Claude) dans une fenêtre séparée |
+
+Les onglets au-dessus du terminal passent d'une session à l'autre ; **×** ferme une session.
+Avec `tmux` installé, les sessions **survivent à un redémarrage de DevPilot** (Claude qui
+travaille, un serveur de dev qui tourne…).
+
+### 5. Voir tes modifications en direct
+
+Dans la fiche du dépôt, **Voir en local** :
+
+- rien ne tourne → **▶ Lancer** : un terminal s'ouvre au bon endroit et tape la commande
+  (son `dev.sh`, la pile docker qui le monte, ou `npm run dev`) ;
+- dès que ça répond → **localhost:port ouvrir ↗** ouvre la page dans un nouvel onglet ;
+- **API :port** (gris) : une API utilisée par la page, pas à ouvrir (lien vers `/docs` si elle en a) ;
+- **en rouge** « ne répond pas » : le port est ouvert mais le service a planté → **Voir les journaux**.
+
+Tu modifies, tu enregistres, la page se met à jour (ou F5).
+
+### 6. La carte des branches
+
+**⎇ Carte des branches** (en haut de la liste des dépôts) : chaque dépôt → sa branche de
+travail → `main`, avec des flèches :
+
+- **bleu** : des commits à fusionner dans `main` ;
+- **vert** : ce travail est déjà dans `main` (même après un « squash and merge ») ;
+- **pointillé** : rien encore, ou pas de branche — bouton **Créer la branche** dans l'encadré.
+
+Sur chaque branche : modifiée, jamais poussée, à pousser, sur GitHub, à récupérer (poussée
+depuis un autre PC), la PR (ouverte / fusionnée), et les boutons Ouvrir / Terminal / Claude.
+
+### 7. Sauvegarder ton travail, puis le fusionner
+
+- **Sauvegarder** (autant que tu veux) : commit + push **sur ta branche**. Dans le terminal du
+  dépôt : `git add -A && git commit -m "…" && git push -u origin HEAD` — ou l'outil Git de ton projet.
+- **Terminé** : ouvre la **PR** vers `main`, fusionne-la. La carte passe au **vert**.
+- **Mettre en production** : après la fusion, avec l'outil de déploiement de ton projet.
+
+### 8. Reprendre plus tard, ou depuis un autre PC
+
+- **Même PC** : rien à faire, le dépôt est resté sur ta branche.
+- **Autre PC** : fiche du dépôt → liste **Branche** → ta branche (« sur GitHub ») →
+  **Passer dessus**. Si elle y était déjà : `git pull` dans son terminal.
+- **Branche fusionnée** : elle est finie. Pour la tâche suivante : **Mettre main à jour** →
+  nouvelle branche.
+
+### 9. Fermer proprement
+
+- Barre **En marche** (en haut du projet) : chaque port ouvert ; **✕** arrête celui-là,
+  **Fermer le projet** arrête tout (serveurs de dev, terminaux, console du projet) et libère les ports.
+- Bouton **Console …** (si le projet a sa console) : ouvre toujours la version **à jour** —
+  si son code a changé, il la relance d'abord.
+- Page **Sessions** (menu de gauche) : toutes les sessions de tous les projets, pour les
+  retrouver ou les fermer.
+
+---
+
+## 4. Chaque jour : récupérer / publier DevPilot
 
 **Avant de travailler** (récupère ce qui a été publié depuis les autres PC) :
 
@@ -79,7 +173,7 @@ devpilot publish "Carte des branches : flèches plus lisibles"
 Ce que fait `publish`, dans l'ordre — et il **s'arrête au premier problème sans rien envoyer** :
 
 1. vérifie : pas de secret (clé, jeton, `.env`), pas de données ni de sauvegardes, pas de
-   **mot interdit** (ta liste privée, voir section 4), pas de marques de conflit `<<<<<<<` ;
+   **mot interdit** (ta liste privée, voir section 5), pas de marques de conflit `<<<<<<<` ;
 2. lance les tests (~3 min ; `--sans-tests` pour une correction de texte) ;
 3. commite sur une branche (jamais directement sur `main`) ;
 4. se met à jour avec GitHub si un autre PC a publié entre-temps ;
@@ -98,7 +192,7 @@ te dit quoi taper. Corrige le fichier **sans laisser de `<<<<<<<`**, puis relanc
 
 ---
 
-## 4. Préparer un PC pour publier
+## 5. Préparer un PC pour publier
 
 Seulement sur un PC où tu **développes** DevPilot (pas besoin pour `update`) :
 
@@ -123,7 +217,7 @@ ssh -T git@github.com        # doit répondre « Hi <ton compte>! »
 
 ---
 
-## 5. Ça ne marche pas ?
+## 6. Ça ne marche pas ?
 
 | Symptôme | Que faire |
 |---|---|
@@ -141,7 +235,7 @@ ssh -T git@github.com        # doit répondre « Hi <ton compte>! »
 
 ---
 
-## 6. Pour développer DevPilot
+## 7. Pour développer DevPilot
 
 ```bash
 cd ~/devpilot/.devpilot/app
