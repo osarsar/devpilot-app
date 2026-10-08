@@ -557,6 +557,27 @@ def _mask_config(cfg):
     return masked
 
 
+# The hosting platforms DevPilot knows. The keys stay lowercase: the DNS
+# records (dnscheck.EXPECTED_FOR_PLATFORM), the dashboards (host_urls /
+# token_urls) and the UI are all keyed on them. The aliases cover what the
+# hand-typed "Plateforme" field used to accept.
+PLATFORMS = ("vercel", "netlify", "railway", "render", "cloudflare", "fly")
+_PLATFORM_ALIASES = {
+    "vercel.com": "vercel", "netlify.com": "netlify", "railway.app": "railway",
+    "render.com": "render", "fly.io": "fly", "cloudflare pages": "cloudflare",
+    "cloudflare-pages": "cloudflare", "cloudflare_pages": "cloudflare", "pages": "cloudflare",
+}
+# a VPS is a server (its own card, over SSH), not a deployment platform
+_NOT_A_PLATFORM = {"vps", "server", "serveur", "self", "docker"}
+
+
+def _norm_platform(p):
+    """'Vercel' / 'https://vercel.com/' -> 'vercel' (the key the DNS records use)."""
+    p = re.sub(r"^https?://", "", str(p or "").strip().lower()).strip("/ ")
+    p = p[4:] if p.startswith("www.") else p
+    return _PLATFORM_ALIASES.get(p, p)
+
+
 def _parse_cfg(comp):
     """Extract config dict from a component row."""
     if not comp:
@@ -661,9 +682,26 @@ def api_get_connections(pid):
         })
 
     # ──── HOSTING / DEPLOIEMENT ────
+    # A project is hosted either on a server (SSH, its own card) or on a
+    # platform (token + site URL). Without a card there is no way into the
+    # platform picker, so an empty state is offered when hosting is still open.
+    srv_cfg = _parse_cfg(comps.get("server"))
+    has_server = bool(srv_cfg.get("servers"))
+    hosting_open = True
+    try:
+        import model as _M
+        _m = _M.get_model(pid, probe=False)
+        _needs = _m.get("needs") or []
+        hosting_open = ((not _needs) or "hosting" in _needs) and \
+            "hosting" not in ((_m.get("controller") or {}).get("manages") or [])
+    except Exception:
+        pass
+
     deploy_cfg = _parse_cfg(comps.get("deploy"))
     deploy_url = deploy_cfg.get("site_url", "") or deploy_cfg.get("url", "")
-    platform = deploy_cfg.get("platform", "") or wd.get("frontend_hosting", "")
+    platform = _norm_platform(deploy_cfg.get("platform", "") or wd.get("frontend_hosting", ""))
+    if platform in _NOT_A_PLATFORM:
+        platform = ""
     account_name = deploy_cfg.get("account_name", "")
     account_id = deploy_cfg.get("account_id", "")
     project_url = deploy_cfg.get("project_url", "")
@@ -716,6 +754,21 @@ def api_get_connections(pid):
                 {"label": "Entrer l'URL du site", "action_type": "enter_site_url"},
             ],
         })
+    elif deploy_url:
+        # The site is declared on the platform without an API account: that is
+        # already a real hosting (the domain can point to it). The token only
+        # adds deploys and logs from DevPilot.
+        connections.append({
+            "type": "deploy",
+            "label": f"Deploiement ({platform})" if platform else "Deploiement",
+            "status": "configured", "url": deploy_url,
+            "details": {"plateforme": platform, "site": deploy_url, "dashboard": project_url,
+                        "compte": "pas de token (facultatif)"},
+            "actions": [
+                {"label": "Lier un compte (token)", "action_type": "pick_hosting_account"},
+                {"label": "Modifier", "action_type": "setup_deploy"},
+            ],
+        })
     elif platform:
         # Platform chosen but no account linked
         connections.append({
@@ -725,6 +778,17 @@ def api_get_connections(pid):
             "details": {"plateforme": platform},
             "actions": [
                 {"label": "Choisir un compte", "action_type": "pick_hosting_account"},
+            ],
+        })
+    elif hosting_open and not has_server:
+        # Nothing chosen yet: the way in to the platform picker (Vercel, Netlify...)
+        connections.append({
+            "type": "deploy",
+            "label": "Hebergement : plateforme (Vercel, Netlify...)",
+            "status": "non_connecte", "url": "",
+            "details": {},
+            "actions": [
+                {"label": "Choisir une plateforme", "action_type": "setup_deploy"},
             ],
         })
 
@@ -1037,6 +1101,9 @@ def api_update_connection(pid):
 
     # Masked secrets ("****") are never written back; False / "" are kept: they clear a value
     config = {k: v for k, v in config.items() if not (isinstance(v, str) and v.startswith("****"))}
+
+    if conn_type == "deploy" and config.get("platform"):
+        config["platform"] = _norm_platform(config["platform"])
 
     # Map connection type to component key
     comp_key = conn_type
@@ -1355,6 +1422,12 @@ def api_link_hosting(pid):
         db.update_project_component(pid, "deploy", config=merged, enabled=True)
     else:
         db.add_project_component(pid, "deploy", enabled=True, config=deploy_config)
+
+    try:                                    # the folder is the reference (.devpilot/connections.json)
+        import connections as _C
+        _C.mirror(pid)
+    except Exception:
+        pass
 
     # Regenerate CLAUDE.md
     ppath = project.get("path", "")

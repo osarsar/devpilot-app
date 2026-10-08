@@ -3634,6 +3634,17 @@ const CONN_STATUS = {
     non_connecte:  {label:'Non connecte',  cls:'badge-rose'},
     missing:       {label:'Manquant',      cls:'badge-rose'},
 };
+// Hosting platforms (no SSH: a token + the site URL). Keys lowercase: the DNS
+// records and the dashboards are keyed on them (cloud_routes.PLATFORMS).
+const DEPLOY_PLATFORMS = [
+    {key:'vercel',     label:'Vercel',            icon:'▲', tokenUrl:'https://vercel.com/account/tokens'},
+    {key:'netlify',    label:'Netlify',           icon:'◆', tokenUrl:'https://app.netlify.com/user/applications#personal-access-tokens'},
+    {key:'railway',    label:'Railway',           icon:'🚂', tokenUrl:'https://railway.app/account/tokens'},
+    {key:'render',     label:'Render',            icon:'▸', tokenUrl:'https://dashboard.render.com/settings#api-keys'},
+    {key:'cloudflare', label:'Cloudflare Pages',  icon:'☁️', tokenUrl:'https://dash.cloudflare.com/profile/api-tokens'},
+];
+function deployPlatform(key) { return DEPLOY_PLATFORMS.find(function(p) { return p.key === key; }) || null; }
+function deployTokenUrl(key) { return (deployPlatform(key) || {}).tokenUrl || '#'; }
 
 async function loadWsConnections() {
     const el = document.getElementById('ws-connections');
@@ -3698,7 +3709,7 @@ async function loadWsConnections() {
                 } else if (act.action_type === 'change_hosting_account') {
                     actionBtns += '<button class="btn btn-xs" onclick="wsChangeHostingAccount()" style="flex-shrink:0">' + act.label + '</button>';
                 } else if (act.action_type === 'setup_deploy') {
-                    actionBtns += '<button class="btn btn-xs" onclick="wsSetupDeploy()" style="flex-shrink:0">' + act.label + '</button>';
+                    actionBtns += '<button class="btn btn-xs btn-primary" onclick="wsSetupDeploy()" style="flex-shrink:0">' + act.label + '</button>';
                 } else if (act.action_type === 'setup_database') {
                     actionBtns += '<button class="btn btn-xs" onclick="wsSetupDatabase()" style="flex-shrink:0">' + act.label + '</button>';
                 } else if (act.action_type === 'setup_storage') {
@@ -3854,8 +3865,47 @@ async function wsGitCreateAndPush() {
 }
 
 // Pick a hosting account for deploy
+// The guided hosting forms are written inside the deploy card. When the project
+// has no hosting at all there is no such card yet, so the holder is created
+// under the Hebergement section instead of the buttons doing nothing.
+function deployPasteEl() {
+    let el = document.getElementById('conn-paste-deploy');
+    if (el) return el;
+    const panel = document.getElementById('ws-connections');
+    if (!panel) return null;
+    el = document.createElement('div');
+    el.id = 'conn-paste-deploy';
+    el.style.marginBottom = '8px';
+    const after = document.getElementById('ws-servers');
+    if (after) after.insertAdjacentElement('afterend', el); else panel.appendChild(el);
+    return el;
+}
+
+// Hosting = a server over SSH, or a platform. Both ways in, in one place: the
+// need chip and the roadmap step land here instead of on the SSH form only.
+function wsPickHosting() {
+    const el = deployPasteEl();
+    if (!el) return;
+    const col = 'flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;height:auto;text-align:left';
+    el.innerHTML = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:14px">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--violet)">Ou le site est-il heberge ?</div>'
+        + '<div style="font-size:11px;color:var(--text-3);margin:3px 0 10px">C\'est cet hebergement que le domaine visera.</div>'
+        + '<div style="display:grid;gap:6px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">'
+        + '<button class="btn btn-primary" onclick="wsSetupDeploy()" style="' + col + '">'
+        + '<span>▲ Une plateforme</span>'
+        + '<span style="font-size:10px;font-weight:400;opacity:.85">Vercel, Netlify, Railway, Render, Cloudflare</span></button>'
+        + '<button class="btn" onclick="srvOpen()" style="' + col + '">'
+        + '<span>🖥️ Un serveur (SSH)</span>'
+        + '<span style="font-size:10px;font-weight:400;color:var(--text-4)">VPS OVH, Hetzner, DigitalOcean...</span></button>'
+        + '</div>'
+        + '<div style="margin-top:8px"><button class="btn btn-xs" onclick="this.closest(\'#conn-paste-deploy\').style.display=\'none\'">Annuler</button></div>'
+        + '</div>';
+    el.style.display = 'block';
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 async function wsPickHostingAccount() {
-    const pasteEl = document.getElementById('conn-paste-deploy');
+    const pasteEl = deployPasteEl();
     if (!pasteEl) return;
 
     // Fetch available accounts
@@ -3868,9 +3918,9 @@ async function wsPickHostingAccount() {
         html += '<div style="font-size:11px;color:var(--text-3);margin-bottom:10px">Aucun compte enregistre. Ajoute-en un d\'abord.</div>';
     } else {
         for (const a of accounts) {
-            const platformIcons = {vercel:'▲',netlify:'◆',railway:'🚂',render:'▸',cloudflare:'☁️'};
+            const icon = (deployPlatform(a.platform) || {}).icon || '🌐';
         html += '<div onclick="wsSelectHostingAccount(\'' + a.id + '\')" style="padding:10px;border:1px solid var(--border-1);border-radius:8px;margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:all .15s" onmouseover="this.style.borderColor=\'var(--violet)\'" onmouseout="this.style.borderColor=\'var(--border-1)\'">'
-                + '<div style="font-size:20px">' + (platformIcons[a.platform] || '🌐') + '</div>'
+                + '<div style="font-size:20px">' + icon + '</div>'
                 + '<div style="flex:1">'
                 + '<div style="font-size:12px;font-weight:600;color:var(--text-0)">' + (a.email || a.name) + '</div>'
                 + '<div style="font-size:10px;color:var(--text-3)">' + a.platform + (a.username ? ' @' + a.username : '') + (a.projects?.length ? ' — ' + a.projects.length + ' projet(s)' : '') + '</div>'
@@ -3880,15 +3930,13 @@ async function wsPickHostingAccount() {
         }
     }
 
-    const tokenPages = {vercel:'https://vercel.com/account/tokens',netlify:'https://app.netlify.com/user/applications#personal-access-tokens',
-        railway:'https://railway.app/account/tokens',render:'https://dashboard.render.com/settings#api-keys',cloudflare:'https://dash.cloudflare.com/profile/api-tokens'};
-
     html += '<div style="margin-top:8px;border-top:1px solid var(--border-0);padding-top:8px">'
         + '<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">Ajouter un nouveau compte</div>'
         + '<div style="font-size:10px;color:var(--text-4);margin-bottom:6px">1. Choisis la plateforme → 2. Genere un token → 3. Colle-le ici</div>'
         + '<div style="display:flex;gap:6px;margin-bottom:6px">'
-        + '<select class="form-input" id="ha-platform" style="font-size:11px;padding:5px 8px;flex:1" onchange="document.getElementById(\'ha-token-link\').href=({vercel:\'https://vercel.com/account/tokens\',netlify:\'https://app.netlify.com/user/applications#personal-access-tokens\',railway:\'https://railway.app/account/tokens\',render:\'https://dashboard.render.com/settings#api-keys\',cloudflare:\'https://dash.cloudflare.com/profile/api-tokens\'})[this.value]||\'#\'"><option value="vercel">Vercel</option><option value="netlify">Netlify</option><option value="railway">Railway</option><option value="render">Render</option><option value="cloudflare">Cloudflare Pages</option></select>'
-        + '<a id="ha-token-link" href="https://vercel.com/account/tokens" target="_blank" class="btn btn-xs" style="flex-shrink:0;text-decoration:none">Generer un token</a>'
+        + '<select class="form-input" id="ha-platform" style="font-size:11px;padding:5px 8px;flex:1" onchange="document.getElementById(\'ha-token-link\').href=deployTokenUrl(this.value)">'
+        + DEPLOY_PLATFORMS.map(function(p) { return '<option value="' + p.key + '">' + p.label + '</option>'; }).join('') + '</select>'
+        + '<a id="ha-token-link" href="' + deployTokenUrl(DEPLOY_PLATFORMS[0].key) + '" target="_blank" class="btn btn-xs" style="flex-shrink:0;text-decoration:none">Generer un token</a>'
         + '</div>'
         + '<input class="form-input" id="ha-token" type="password" placeholder="Colle le token ici" style="font-size:11px;padding:5px 8px;margin-bottom:6px">'
         + '<div id="ha-status" style="font-size:10px;min-height:14px;margin-bottom:4px"></div>'
@@ -3935,16 +3983,10 @@ function wsChangeHostingAccount() {
 
 // Guided deploy setup — platform + account + URLs
 async function wsSetupDeploy() {
-    const pasteEl = document.getElementById('conn-paste-deploy');
+    const pasteEl = deployPasteEl();
     if (!pasteEl) return;
 
-    const platforms = [
-        {key:'vercel', label:'Vercel', icon:'▲', tokenUrl:'https://vercel.com/account/tokens'},
-        {key:'netlify', label:'Netlify', icon:'◆', tokenUrl:'https://app.netlify.com/user/applications#personal-access-tokens'},
-        {key:'railway', label:'Railway', icon:'🚂', tokenUrl:'https://railway.app/account/tokens'},
-        {key:'render', label:'Render', icon:'▸', tokenUrl:'https://dashboard.render.com/settings#api-keys'},
-        {key:'cloudflare', label:'Cloudflare Pages', icon:'☁️', tokenUrl:'https://dash.cloudflare.com/profile/api-tokens'},
-    ];
+    const platforms = DEPLOY_PLATFORMS;
 
     // Fetch current data + accounts in parallel
     const [connData, accounts] = await Promise.all([
@@ -4001,7 +4043,7 @@ async function wsSetupDeploy() {
         + '<div style="font-size:10px;font-weight:600;color:var(--text-3);margin-bottom:4px">Ajouter un nouveau compte</div>'
         + '<div style="display:flex;gap:4px">'
         + '<input class="form-input" id="deploy-new-token" type="password" placeholder="Coller le token" style="font-size:11px;padding:5px 8px;flex:1">'
-        + '<button class="btn btn-xs" id="deploy-gen-link" onclick="var p=document.getElementById(\'deploy-platform\').value;var urls={vercel:\'https://vercel.com/account/tokens\',netlify:\'https://app.netlify.com/user/applications#personal-access-tokens\',railway:\'https://railway.app/account/tokens\',render:\'https://dashboard.render.com/settings#api-keys\',cloudflare:\'https://dash.cloudflare.com/profile/api-tokens\'};window.open(urls[p]||\'#\',\'_blank\')">Generer</button>'
+        + '<button class="btn btn-xs" id="deploy-gen-link" onclick="window.open(deployTokenUrl(document.getElementById(\'deploy-platform\').value),\'_blank\')">Generer</button>'
         + '<button class="btn btn-xs btn-primary" onclick="wsDeployAddAccount()">Ajouter</button>'
         + '</div><div id="deploy-add-status" style="font-size:10px;min-height:14px;margin-top:4px"></div></div></div>';
 
@@ -4091,7 +4133,7 @@ async function wsSaveDeploy() {
 // Regen token — open token page then show paste input for new token
 function wsRegenToken(tokenPageUrl) {
     if (tokenPageUrl) window.open(tokenPageUrl, '_blank');
-    const pasteEl = document.getElementById('conn-paste-deploy');
+    const pasteEl = deployPasteEl();
     if (!pasteEl) return;
     pasteEl.innerHTML = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:12px">'
         + '<div style="font-size:12px;font-weight:600;color:var(--violet);margin-bottom:6px">Coller le nouveau token</div>'
@@ -4124,7 +4166,7 @@ async function wsSaveRegenToken() {
 
 // Enter site URL after deploying on the platform
 function wsEnterSiteUrl() {
-    const pasteEl = document.getElementById('conn-paste-deploy');
+    const pasteEl = deployPasteEl();
     if (!pasteEl) return;
     pasteEl.innerHTML = '<div style="background:var(--bg-0);border:1px solid var(--violet);border-radius:8px;padding:12px">'
         + '<div style="font-size:12px;font-weight:600;color:var(--violet);margin-bottom:6px">Entrer l\'URL du site deploye</div>'
@@ -4850,7 +4892,7 @@ function wsShowAddConnection(preselect, prefill) {
     const types = [
         {key:'github', label:'GitHub', fields:[{k:'url',l:'URL du repo',p:'https://github.com/user/repo'}]},
         {key:'deploy', label:'Deploiement', fields:[
-            {k:'platform',l:'Plateforme',p:'vercel, netlify, railway, cloudflare'},
+            {k:'platform',l:'Plateforme',o:[['','— choisir —']].concat(DEPLOY_PLATFORMS.map(function(x) { return [x.key, x.label]; }))},
             {k:'site_url',l:'URL du site',p:'https://mon-site.vercel.app'},
             {k:'project_url',l:'URL dashboard',p:'https://vercel.com/user/projet'},
             {k:'domain',l:'Domaine',p:'example.com'},
@@ -4924,6 +4966,13 @@ function wsConnTypeChanged() {
     let html = '';
     for (const f of typeDef.fields) {
         const val = prefill[f.k] || '';
+        if (f.o) {                                        // a known list (platforms...): no typo possible
+            html += '<div class="form-group"><label style="font-size:11px">' + f.l + '</label>'
+                + '<select class="form-input conn-field" data-key="' + f.k + '" style="font-size:12px;padding:6px 8px">'
+                + f.o.map(function(o) { return '<option value="' + o[0] + '"' + (val === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('')
+                + '</select></div>';
+            continue;
+        }
         const inputType = f.s ? 'password' : 'text';
         html += '<div class="form-group"><label style="font-size:11px">' + f.l + '</label>'
             + '<input class="form-input conn-field" data-key="' + f.k + '" type="' + inputType + '" value="' + (val.startsWith && val.startsWith('****') ? '' : val) + '" placeholder="' + f.p + '" style="font-size:12px;padding:6px 8px"></div>';
@@ -5876,7 +5925,7 @@ function stepGo(action, need) {
         case 'prompt': return wsTab('prompt');
         case 'git': return wsTab('git');
         case 'terminal': if (xterm) xterm.focus(); return;
-        case 'hosting': wsTab('connections'); setTimeout(() => { if (!(window._wsServers || []).length) srvOpen(); else document.getElementById('ws-servers')?.scrollIntoView({ behavior: 'smooth' }); }, 500); return;
+        case 'hosting': wsTab('connections'); setTimeout(() => { if (!(window._wsServers || []).length) wsPickHosting(); else document.getElementById('ws-servers')?.scrollIntoView({ behavior: 'smooth' }); }, 500); return;
         case 'domain': wsTab('connections'); setTimeout(() => document.getElementById('ws-domain')?.scrollIntoView({ behavior: 'smooth' }), 500); return;
         case 'email': wsTab('connections'); setTimeout(() => document.getElementById('ws-email')?.scrollIntoView({ behavior: 'smooth' }), 500); return;
         default: return wsTab('connections');
@@ -5997,7 +6046,7 @@ const NEED_GO = {
     github: () => openLinkTerminal(wsProjectId),
     domain: () => { wsTab('connections'); setTimeout(() => document.getElementById('ws-domain')?.scrollIntoView({ behavior: 'smooth' }), 500); },
     email: () => { wsTab('connections'); setTimeout(() => document.getElementById('ws-email')?.scrollIntoView({ behavior: 'smooth' }), 500); },
-    hosting: () => { wsTab('connections'); setTimeout(() => srvOpen(), 400); },
+    hosting: () => { wsTab('connections'); setTimeout(() => wsPickHosting(), 400); },
     controller: () => wsTab('connections'),
 };
 
@@ -6113,7 +6162,7 @@ async function loadWsDomain() {
     window._wsDomain = d;
     const c = d.config || {};
     const target = d.expected && d.expected.target;
-    const targetTxt = !target ? '<span style="color:var(--amber)">pas d\'hebergement : ajoute un serveur ou une plateforme pour savoir ou pointer</span>'
+    const targetTxt = !target ? '<a onclick="wsPickHosting()" style="color:var(--amber);cursor:pointer;text-decoration:underline">pas d\'hebergement : choisis un serveur ou une plateforme</a>'
         : target.kind === 'server' ? 'doit pointer vers <b>' + hx(target.ip || target.host) + '</b> (' + hx(target.name || 'serveur') + ')'
         : 'doit pointer vers <b>' + hx(target.platform) + '</b>';
     if (!c.domain) {
@@ -6397,9 +6446,11 @@ async function loadWsServers() {
             </div></div>`;
     }).join('');
     box.innerHTML = `<div class="card mb-8" style="padding:14px">
-        <div class="flex-between mb-8"><div style="font-size:13px;font-weight:700;color:var(--text-0)">Serveurs</div>
-            <button class="btn btn-xs btn-primary" onclick="srvOpen()">+ Ajouter un serveur</button></div>
-        ${rows || '<div style="font-size:12px;color:var(--text-4)">Aucun serveur lie a ce projet.</div>'}</div>`;
+        <div class="flex-between mb-8" style="gap:6px;flex-wrap:wrap"><div style="font-size:13px;font-weight:700;color:var(--text-0)">Serveurs</div>
+            <div class="flex gap-6" style="flex-wrap:wrap">
+            <button class="btn btn-xs btn-primary" onclick="srvOpen()">+ Ajouter un serveur</button>
+            <button class="btn btn-xs" onclick="wsSetupDeploy()" title="Vercel, Netlify, Railway, Render, Cloudflare Pages — pas de SSH">+ Plateforme (Vercel...)</button></div></div>
+        ${rows || '<div style="font-size:12px;color:var(--text-4)">Aucun serveur lie a ce projet. Un site peut aussi vivre sur une plateforme (Vercel, Netlify...) : bouton ci-dessus.</div>'}</div>`;
 }
 
 async function srvOpen(id) {
