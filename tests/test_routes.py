@@ -182,3 +182,67 @@ def test_workspace_writes_go_to_the_project_folder(c, home):
     assert list((dp / "sessions").glob("*.md"))
     st = c.get(f"/api/projects/{pid}/status").get_json()
     assert st["state"] == "ok" and st["repos"] == []
+
+
+# ── Hosting: a server (SSH) or a platform (Vercel...) ───────────────────────
+
+def _deploy_card(c, pid):
+    conns = c.get(f"/api/projects/{pid}/connections").get_json()["connections"]
+    return next((x for x in conns if x["type"] == "deploy"), None)
+
+
+def test_platform_is_offered_when_a_site_has_no_hosting_yet(c):
+    """Without this card the platform picker had no way in (only the SSH form)."""
+    pid = c.post("/api/projects", json={"name": "site"}).get_json()["id"]
+    c.put(f"/api/projects/{pid}/model", json={"profile": "vitrine"})
+    card = _deploy_card(c, pid)
+    assert card["status"] == "non_connecte" and "Vercel" in card["label"]
+    assert [a["action_type"] for a in card["actions"]] == ["setup_deploy"]
+
+
+def test_no_platform_card_once_a_server_is_linked_or_hosting_not_needed(c, home):
+    pid = c.post("/api/projects", json={"name": "site"}).get_json()["id"]
+    c.put(f"/api/projects/{pid}/model", json={"profile": "mobile"})      # no hosting need
+    assert _deploy_card(c, pid) is None
+    c.put(f"/api/projects/{pid}/model", json={"profile": "vitrine"})
+    assert _deploy_card(c, pid) is not None
+    r = c.post(f"/api/projects/{pid}/servers",
+               json={"name": "VPS", "role": "prod", "provider": "ovh", "host": "203.0.113.10",
+                     "user": "ubuntu", "skip_test": True})
+    assert r.get_json()["success"]
+    assert _deploy_card(c, pid) is None                                  # the server card covers it
+
+
+def test_platform_name_is_normalised_and_drives_the_dns_records(c, home):
+    import json
+    pid = c.post("/api/projects", json={"name": "site"}).get_json()["id"]
+    c.post(f"/api/projects/{pid}/connections",
+           json={"type": "deploy", "config": {"platform": "https://Vercel.com/", "site_url": "https://site.vercel.app"}})
+    card = _deploy_card(c, pid)
+    assert card["details"]["plateforme"] == "vercel"
+    assert card["status"] == "configured" and card["url"] == "https://site.vercel.app"   # no token needed
+    c.post(f"/api/projects/{pid}/domain", json={"domain": "site.ma"})
+    exp = c.get(f"/api/projects/{pid}/domain").get_json()["expected"]
+    assert exp["target"] == {"kind": "platform", "platform": "vercel", "site_url": "https://site.vercel.app"}
+    assert {(r["type"], r["name"]) for r in exp["records"]} >= {("A", "@"), ("CNAME", "www")}
+    cj = json.loads((home / "devpilot" / "projects" / "site" / ".devpilot" / "connections.json").read_text())
+    assert cj["deploy"]["platform"] == "vercel"
+
+
+def test_vps_from_the_old_wizard_is_not_a_platform(c):
+    pid = c.post("/api/projects", json={"name": "site"}).get_json()["id"]
+    c.post(f"/api/projects/{pid}/specs", json={"wizard_data": {"frontend_hosting": "vps"}})
+    card = _deploy_card(c, pid)
+    assert card is None or card["actions"][0]["action_type"] == "setup_deploy"
+
+
+def test_linking_a_hosting_account_is_mirrored_in_the_project_folder(c, home):
+    import json
+    pid = c.post("/api/projects", json={"name": "site"}).get_json()["id"]
+    import db
+    db.set_setting("hosting_accounts", json.dumps(
+        [{"id": "a1", "platform": "vercel", "name": "Moi", "email": "moi@x.ma", "token": "t", "projects": []}]))
+    r = c.post(f"/api/projects/{pid}/hosting", json={"account_id": "a1", "site_url": "https://site.vercel.app"})
+    assert r.get_json()["platform"] == "vercel"
+    cj = json.loads((home / "devpilot" / "projects" / "site" / ".devpilot" / "connections.json").read_text())
+    assert cj["deploy"]["platform"] == "vercel" and cj["deploy"]["site_url"] == "https://site.vercel.app"
