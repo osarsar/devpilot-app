@@ -38,7 +38,25 @@ def test_rien_ne_tourne_commande_de_lancement(PV, proj, monkeypatch):
     assert v["infra"]["start"] == {"cmd": "./dev.sh up", "cwd": "infra", "why": "son script dev.sh"}
     b = v["infra/services/backend"]["start"]                       # monté par la pile docker d'infra
     assert b["cmd"] == "./dev.sh up" and b["cwd"] == "infra" and "docker" in b["why"]
-    assert v["landing"]["start"]["cmd"] == "npm run dev"
+    assert v["landing"]["start"]["cmd"] == "npm install && npm run dev"   # cloné : rien d'installé
+
+
+@pytest.mark.parametrize("verrou,attendu", [
+    ("package-lock.json", "npm ci && npm run dev"),
+    ("pnpm-lock.yaml", "pnpm install --frozen-lockfile && pnpm run dev"),
+    ("yarn.lock", "yarn install --frozen-lockfile && yarn dev"),
+    (None, "npm install && npm run dev"),
+])
+def test_dependances_installees_avant_le_lancement(PV, proj, monkeypatch, verrou, attendu):
+    pid, root = proj
+    monkeypatch.setattr(PV, "containers", lambda: [])
+    if verrou:
+        (root / "landing" / verrou).write_text("")
+    st = PV.previews(pid)["landing"]["start"]
+    assert st["cmd"] == attendu and "node_modules absent" in st["why"]
+    (root / "landing" / "node_modules").mkdir()                    # déjà installé : on lance direct
+    st = PV.previews(pid)["landing"]["start"]
+    assert st["cmd"] == attendu.split(" && ")[1] and st["why"] == "package.json"
 
 
 def test_conteneur_rattache_au_depot_dont_il_monte_le_code(PV, proj, monkeypatch):
