@@ -88,6 +88,27 @@ def _owner(path, repo_paths):
     return best
 
 
+# Gestionnaire de paquets choisi par le fichier de verrouillage du dépôt :
+# (fichier, installation fidèle au verrou, lancement du script dev)
+_GESTIONNAIRES = (
+    ("pnpm-lock.yaml", "pnpm install --frozen-lockfile", "pnpm run dev"),
+    ("yarn.lock", "yarn install --frozen-lockfile", "yarn dev"),
+    ("bun.lockb", "bun install --frozen-lockfile", "bun run dev"),
+    ("package-lock.json", "npm ci", "npm run dev"),
+)
+
+
+def _cmd_node(repo):
+    """« npm run dev » — précédé de l'installation si node_modules manque : un
+    dépôt fraîchement cloné échouait sur « next: not found » (ou vite, etc.)."""
+    for verrou, installer, lancer in _GESTIONNAIRES:
+        if (repo / verrou).is_file():
+            break
+    else:
+        installer, lancer = "npm install", "npm run dev"
+    return lancer if (repo / "node_modules").is_dir() else f"{installer} && {lancer}"
+
+
 def _start_cmd(repo, root, repo_paths):
     """How to start this repo when nothing runs: {cmd, cwd (relative to the project), why}."""
     rel = lambda p: str(p.relative_to(root)) if p != root else "."
@@ -113,7 +134,9 @@ def _start_cmd(repo, root, repo_paths):
     if pkg.is_file():
         try:
             if "dev" in (json.loads(pkg.read_text()).get("scripts") or {}):
-                return {"cmd": "npm run dev", "cwd": rel(repo), "why": "package.json"}
+                return {"cmd": _cmd_node(repo), "cwd": rel(repo),
+                        "why": "package.json" if (repo / "node_modules").is_dir()
+                        else "package.json — dépendances installées d'abord (node_modules absent)"}
         except ValueError:
             pass
     for name in ("run.sh", "start.sh"):
